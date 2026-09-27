@@ -1,0 +1,60 @@
+name: EmvCardReader
+options:
+  bundleIdPrefix: vn.edu.hcmuaf.nlu
+  deploymentTarget:
+    iOS: "14.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    SWIFT_OBJC_BRIDGING_HEADER: Sources/App/BridgingHeader.h
+targets:
+  EmvCardReader:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+    info:
+      path: Sources/App/Info.plist
+      properties:
+        UILaunchScreen: {}
+        NFCReaderUsageDescription: "Ứng dụng đọc chip thẻ ngân hàng và CCCD qua NFC để kiểm tra thông tin, chỉ khi bạn chủ động áp thẻ."
+        NSCameraUsageDescription: "Dùng camera để chụp mặt thẻ, nhận dạng số thẻ hoặc dòng MRZ bằng OCR trên máy."
+        NSPhotoLibraryAddUsageDescription: "Lưu báo cáo PDF vào thư viện ảnh nếu bạn chọn chia sẻ."
+        com.apple.developer.nfc.readersession.iso7816.select-identifiers:
+          - A0000000031010
+          - A0000000041010
+          - A0000000651010
+          - A0000007270010
+          - A0000007271010
+          - A0000007270101
+          - A000000333010101
+          - A0000002471001
+    entitlements:
+      path: Sources/App/EmvCardReader.entitlements
+      properties:
+        com.apple.developer.nfc.readersession.formats:
+          - TAG
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: vn.edu.hcmuaf.nlu.emvcardreader
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+  EmvCardReaderTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests
+    dependencies:
+      - target: EmvCardReader
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: vn.edu.hcmuaf.nlu.emvcardreader.tests
+schemes:
+  EmvCardReader:
+    build:
+      targets:
+        EmvCardReader: all
+        EmvCardReaderTests: [test]
+    test:
+      targets:
+        - EmvCardReaderTests
