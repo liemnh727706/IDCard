@@ -70,7 +70,8 @@ jobs:
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= \
             | xcpretty || true
-          APP=$(find build/Build/Products -maxdepth 1 -name "*.app" | head -n1)
+          find build/Build/Products -maxdepth 2 -type d -name "*.app"
+          APP=$(find build/Build/Products -maxdepth 2 -type d -name "*.app" | head -n1)
           echo "APP=$APP"
           test -d "$APP"
           mkdir -p ipa/Payload
