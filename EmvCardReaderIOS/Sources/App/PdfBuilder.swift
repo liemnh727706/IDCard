@@ -22,7 +22,7 @@ enum PdfBuilder {
             }
             func draw(_ text: String, font: UIFont, color: UIColor = .black, x: CGFloat, w: CGFloat, y: CGFloat) -> CGFloat {
                 let attr = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color])
-                let rect = attr.boundingRect(with: CGSize(width: w, height: .greatestFiniteMagnitude),
+                let rect = attr.boundingRect(with: CGSize(width: w, height: CGFloat.greatestFiniteMagnitude),
                                              options: [.usesLineFragmentOrigin], context: nil)
                 attr.draw(with: CGRect(x: x, y: y, width: w, height: rect.height.rounded(.up) + 2),
                          options: [.usesLineFragmentOrigin], context: nil)
@@ -36,7 +36,7 @@ enum PdfBuilder {
                 for rawLine in text.components(separatedBy: "\n") {
                     let line = rawLine.isEmpty ? " " : rawLine
                     let attr = NSAttributedString(string: line, attributes: [.font: font, .foregroundColor: color])
-                    let rect = attr.boundingRect(with: CGSize(width: w, height: .greatestFiniteMagnitude),
+                    let rect = attr.boundingRect(with: CGSize(width: w, height: CGFloat.greatestFiniteMagnitude),
                                                  options: [.usesLineFragmentOrigin], context: nil)
                     let h = rect.height.rounded(.up) + 2
                     ensure(h)
@@ -52,7 +52,7 @@ enum PdfBuilder {
 
             let warnFont = UIFont.boldSystemFont(ofSize: 8.5)
             let warnAttr = NSAttributedString(string: report.sensitiveNote, attributes: [.font: warnFont, .foregroundColor: UIColor(red: 0.54, green: 0.11, blue: 0.11, alpha: 1)])
-            let warnRect = warnAttr.boundingRect(with: CGSize(width: pageW - 2 * margin - 12, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin], context: nil)
+            let warnRect = warnAttr.boundingRect(with: CGSize(width: pageW - 2 * margin - 12, height: CGFloat.greatestFiniteMagnitude), options: [.usesLineFragmentOrigin], context: nil)
             ensure(warnRect.height + 16)
             let box = CGRect(x: margin, y: y, width: pageW - 2 * margin, height: warnRect.height + 12)
             ctx.cgContext.setFillColor(UIColor(red: 0.99, green: 0.93, blue: 0.93, alpha: 1).cgColor)
@@ -82,8 +82,8 @@ enum PdfBuilder {
                 for (k, v) in sec.rows {
                     let kAttr = NSAttributedString(string: k, attributes: [.font: UIFont.boldSystemFont(ofSize: 9.5)])
                     let vAttr = NSAttributedString(string: v.isEmpty ? " " : v, attributes: [.font: UIFont.systemFont(ofSize: 9.5)])
-                    let kh = kAttr.boundingRect(with: CGSize(width: 150, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin], context: nil).height
-                    let vh = vAttr.boundingRect(with: CGSize(width: valW, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin], context: nil).height
+                    let kh = kAttr.boundingRect(with: CGSize(width: 150, height: CGFloat.greatestFiniteMagnitude), options: [.usesLineFragmentOrigin], context: nil).height
+                    let vh = vAttr.boundingRect(with: CGSize(width: valW, height: CGFloat.greatestFiniteMagnitude), options: [.usesLineFragmentOrigin], context: nil).height
                     let h = max(kh, vh) + 6
                     ensure(h)
                     kAttr.draw(with: CGRect(x: margin, y: y, width: 150, height: h), options: [.usesLineFragmentOrigin], context: nil)

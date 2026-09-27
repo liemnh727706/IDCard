@@ -5,7 +5,7 @@ import Foundation
 @available(iOS 13.0, *)
 final class NfcSession: NSObject, NFCTagReaderSessionDelegate {
     private var session: NFCTagReaderSession?
-    private var onTag: ((Transceiver) -> Void)?
+    private var onTag: ((@escaping Transceiver) -> Void)?
     private var onError: ((String) -> Void)?
     private var alertMessage: String
 

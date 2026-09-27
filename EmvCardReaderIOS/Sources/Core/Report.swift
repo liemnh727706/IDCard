@@ -76,7 +76,7 @@ public enum EmvReport {
                 let parts = s.components(separatedBy: "^")
                 if parts.count >= 3 { name = parts[1].trimmingCharacters(in: .whitespaces) }
             }
-            let label = TlvParser.findFirst(nodes, "50")?.value.flatMap { String(data: $0, encoding: .ascii) } ?? ""
+            let label = TlvParser.findFirst(nodes, "50").flatMap { String(data: $0.value, encoding: .ascii) } ?? ""
             let country = TlvParser.findFirst(nodes, "5F28")?.value.hexString ?? ""
             return EmvSummary(pan: pan, expiryYymm: exp, name: name, label: label, aid: aid,
                               serviceCode: service, country: country, aids: aids, log: log)
