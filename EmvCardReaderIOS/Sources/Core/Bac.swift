@@ -37,7 +37,7 @@ public enum Bac {
 
     private static func sha1(_ d: Data) -> Data {
         var digest = [UInt8](repeating: 0, count: Int(CC_SHA1_DIGEST_LENGTH))
-        d.withUnsafeBytes { CC_SHA1($0.baseAddress, CC_LONG(d.count), &digest) }
+        _ = d.withUnsafeBytes { CC_SHA1($0.baseAddress, CC_LONG(d.count), &digest) }
         return Data(digest)
     }
 

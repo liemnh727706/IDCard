@@ -15,7 +15,7 @@ final class NfcSession: NSObject, NFCTagReaderSessionDelegate {
 
     /// Bắt đầu một phiên đọc. `body` chạy trên nền khi phát hiện thẻ, nhận vào một Transceiver.
     /// Gọi `finish(message:)` bên trong hoặc sau khi `body` xong để đóng phiên với thông báo trên UI hệ thống.
-    func start(onTag: @escaping (Transceiver, @escaping (String?) -> Void) -> Void, onError: @escaping (String) -> Void) {
+    func start(onTag: @escaping (@escaping Transceiver, @escaping (String?) -> Void) -> Void, onError: @escaping (String) -> Void) {
         self.onError = onError
         guard NFCTagReaderSession.readingAvailable else {
             onError("Thiết bị này không hỗ trợ đọc NFC."); return
