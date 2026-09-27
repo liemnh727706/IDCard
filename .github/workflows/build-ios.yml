@@ -59,6 +59,30 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
             | xcpretty --test || (echo "xcodebuild test failed" && exit 1)
 
+      - name: Build unsigned .app for device (for sideloading)
+        run: |
+          set -o pipefail
+          rm -rf build
+          xcodebuild build \
+            -project EmvCardReader.xcodeproj \
+            -scheme EmvCardReader \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= \
+            | xcpretty || true
+          APP=$(find build/Build/Products -maxdepth 1 -name "*.app" | head -n1)
+          echo "APP=$APP"
+          test -d "$APP"
+          mkdir -p ipa/Payload
+          cp -R "$APP" ipa/Payload/
+          cd ipa && zip -qr ../EmvCardReader-unsigned.ipa Payload
+
+      - name: Upload unsigned IPA (sideload with AltStore/Sideloadly)
+        uses: actions/upload-artifact@v4
+        with:
+          name: EmvCardReader-unsigned-ipa
+          path: EmvCardReaderIOS/EmvCardReader-unsigned.ipa
+
       - name: Upload generated project (for debugging)
         if: always()
         uses: actions/upload-artifact@v4
