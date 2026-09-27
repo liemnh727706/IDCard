@@ -1,6 +1,14 @@
 package vn.edu.hcmuaf.nlu.emvreader
 
 import android.app.Activity
+import android.content.Intent
+import android.net.Uri
+import android.provider.MediaStore
+import androidx.core.content.FileProvider
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import java.io.File
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.nfc.tech.IsoDep
@@ -14,6 +22,11 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
     private var nfcAdapter: NfcAdapter? = null
     private lateinit var tvStatus: TextView
     private lateinit var tvLog: TextView
+    private lateinit var tvCompare: TextView
+    private var photoFile: File? = null
+
+    @Volatile private var chipInfo: ChipCardInfo? = null
+    @Volatile private var ocrInfo: OcrCardInfo? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -21,6 +34,8 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
 
         tvStatus = findViewById(R.id.tvStatus)
         tvLog = findViewById(R.id.tvLog)
+        tvCompare = findViewById(R.id.tvCompare)
+        findViewById<Button>(R.id.btnOcr).setOnClickListener { captureCard() }
         findViewById<Button>(R.id.btnClear).setOnClickListener {
             tvLog.text = ""
         }
@@ -71,7 +86,69 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
         }
     }
 
+    private fun captureCard() {
+        val dir = File(cacheDir, "images").apply { mkdirs() }
+        val file = File(dir, "card.jpg")
+        photoFile = file
+        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+            .putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        try {
+            startActivityForResult(intent, REQ_CAPTURE)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Không mở được camera: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        val file = photoFile
+        if (requestCode != REQ_CAPTURE || resultCode != RESULT_OK || file == null || !file.exists()) return
+        tvCompare.text = "Đang OCR..."
+        val image = InputImage.fromFilePath(this, Uri.fromFile(file))
+        TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+            .process(image)
+            .addOnSuccessListener { text ->
+                ocrInfo = OcrParser.parse(text.text)
+                file.delete()
+                updateComparison()
+            }
+            .addOnFailureListener { e ->
+                file.delete()
+                tvCompare.text = "OCR lỗi: ${e.message}"
+            }
+    }
+
+    private fun updateComparison() {
+        val ocr = ocrInfo
+        val chip = chipInfo
+        val sb = StringBuilder()
+        if (ocr != null) {
+            sb.append("OCR: ${ocr.pans.size} dãy số thẻ, ${ocr.expiries.size} ngày MM/YY\n")
+        } else {
+            sb.append("Chưa chụp ảnh mặt thẻ (bấm nút OCR).\n")
+        }
+        if (chip == null) {
+            sb.append("Chưa đọc chip (áp thẻ vào mặt sau điện thoại).\n")
+        }
+        if (ocr != null && chip != null) {
+            val v = CardMatcher.compare(ocr, chip)
+            v.lines.forEach { sb.append("- ").append(it).append("\n") }
+            sb.append("\n").append(v.overall)
+        }
+        runOnUiThread { tvCompare.text = sb.toString() }
+    }
+
     private fun renderResult(result: EmvReader.EmvResult) {
+        val allNodes = result.allTlvByAid.values.flatten()
+        val pan = TlvParser.findFirst(allNodes, "5A")?.value?.let { TlvParser.toHex(it).trimEnd('F', 'f') }
+        val exp = TlvParser.findFirst(allNodes, "5F24")?.value?.let { TlvParser.toHex(it) }
+        if (pan != null) {
+            chipInfo = ChipCardInfo(pan, exp?.take(4))
+            updateComparison()
+        }
         val sb = StringBuilder()
         sb.append("========== KẾT QUẢ ĐỌC THẺ ==========\n")
         sb.append("Thời điểm: ${java.text.SimpleDateFormat("HH:mm:ss").format(java.util.Date())}\n\n")
@@ -145,5 +222,9 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
             tvLog.append(text)
             tvLog.append("\n\n")
         }
+    }
+
+    companion object {
+        private const val REQ_CAPTURE = 1001
     }
 }

@@ -14,11 +14,31 @@
         android:textSize="16sp"
         android:paddingBottom="8dp" />
 
-    <Button
-        android:id="@+id/btnClear"
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Xóa log" />
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnOcr"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Chụp mặt thẻ (OCR)" />
+
+        <Button
+            android:id="@+id/btnClear"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Xóa log" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvCompare"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="8dp"
+        android:text="Bước 1: áp thẻ để đọc chip. Bước 2: chụp mặt thẻ có số thẻ và hạn dùng (đặt trên nền tối, đủ sáng, không chói)."
+        android:textSize="14sp" />
 
     <ScrollView
         android:layout_width="match_parent"
