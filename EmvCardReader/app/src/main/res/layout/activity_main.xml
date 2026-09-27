@@ -38,6 +38,12 @@
                 android:text="Khóa mở thẻ: 3 thông tin in ở dòng MRZ mặt sau CCCD. Dán 2 dòng MRZ đầu rồi bấm Điền, hoặc nhập tay."
                 android:textSize="12sp" />
 
+            <Button
+                android:id="@+id/btnMrzOcr"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Chụp mặt sau CCCD, OCR MRZ tự điền" />
+
             <EditText
                 android:id="@+id/etMrz1"
                 android:layout_width="match_parent"
@@ -126,6 +132,30 @@
                 android:layout_height="wrap_content"
                 android:text="Xóa log" />
         </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnExport"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Xuất PDF" />
+
+            <Button
+                android:id="@+id/btnPrint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="In báo cáo" />
+        </LinearLayout>
+
+        <CheckBox
+            android:id="@+id/chkFullPan"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Hiện đầy đủ số thẻ trong báo cáo thẻ ngân hàng (mặc định che bớt)" />
 
         <TextView
             android:id="@+id/tvCompare"

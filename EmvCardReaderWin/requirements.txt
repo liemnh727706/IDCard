@@ -9,3 +9,4 @@ winrt-Windows.Globalization
 pyinstaller
 pycryptodome
 pillow
+reportlab

@@ -10,6 +10,8 @@ import emv
 import match
 import ocr_win
 import pcsc
+import report
+import report_ui
 
 
 class App(tk.Tk):
@@ -47,6 +49,7 @@ class App(tk.Tk):
         ttk.Button(bar, text="Chọn ảnh mặt thẻ (OCR)...", command=self.pick_image).pack(side="left", padx=4)
         ttk.Checkbutton(bar, text="Hiện đầy đủ PAN/Track2", variable=self.show_full,
                         command=self.render).pack(side="left", padx=12)
+        report_ui.add_buttons(bar, self.build_report, "TheNganHang")
         self.summary = scrolledtext.ScrolledText(emv_tab, height=14, font=("Consolas", 10), wrap="word")
         self.summary.pack(fill="x", pady=6)
         self.log = scrolledtext.ScrolledText(emv_tab, font=("Consolas", 9), wrap="none")
@@ -148,6 +151,36 @@ class App(tk.Tk):
         for title, cmd, rsp in res.steps:
             out += [f"> {title}", f"  CMD: {cmd.hex().upper()}", f"  RSP: {rsp.hex().upper()}"]
         return "\n".join(out)
+
+    def build_report(self):
+        chip, res = self.chip, self.result
+        if not (chip and chip.pan):
+            return None
+        full = self.show_full.get()
+        pan = chip.pan if full else emv.mask_pan_digits(chip.pan)
+        exp = f"{chip.expiry_yymm[2:]}/{chip.expiry_yymm[:2]}" if chip.expiry_yymm else "(không có)"
+        country = {"0704": "Việt Nam (704)"}.get(chip.country, chip.country or "(không có)")
+        main = [("Loại thẻ / ứng dụng", f"{chip.label} (AID {chip.aid})"),
+                ("Số thẻ (PAN)", pan + ("" if full else "  [đã che bớt]")),
+                ("Hạn dùng (MM/YY)", exp),
+                ("Họ tên chủ thẻ (theo chip)", chip.name or "(chip không lưu tên)"),
+                ("Ngân hàng / nhà phát hành", banks.describe(chip.pan)),
+                ("Service code", chip.service_code or "(không có)"),
+                ("Quốc gia phát hành", country)]
+        sections = [{"heading": "Thông tin chính", "rows": main}]
+        if self.ocr:
+            lines, verdict = match.compare(self.ocr, chip)
+            sections.append({"heading": "Đối chiếu với mặt thẻ (OCR)",
+                             "rows": [("Kết luận", verdict)], "text": chr(10).join("- " + x for x in lines)})
+        log = self.raw_log
+        if not full:
+            log = emv.mask_in_text(log, chip.pan)
+        tech = [("Đầu đọc", self.cb.get()), ("ATR", res.atr.hex().upper() if res else ""),
+                ("Giao thức", f"T={0 if res and res.protocol == 1 else 1}"),
+                ("Số ứng dụng (AID)", ", ".join(res.aids) if res else "")]
+        sections.append({"heading": "Thông tin kèm theo (kỹ thuật)", "rows": tech, "text": log})
+        note = report.SENSITIVE_NOTE + (" Số thẻ đã được che bớt." if not full else " Số thẻ hiển thị ĐẦY ĐỦ.")
+        return report.new_report("Báo cáo đọc thẻ ngân hàng gắn chip", sections, note)
 
     def render(self):
         chip = self.chip

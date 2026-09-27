@@ -3,10 +3,14 @@ import io
 import queue
 import threading
 import tkinter as tk
-from tkinter import scrolledtext, ttk
+from tkinter import filedialog, scrolledtext, ttk
 
 import bac
+import cccd_report
+import mrz
+import ocr_win
 import pcsc
+import report_ui
 
 DG_NAMES = {"61": "DG1", "75": "DG2", "6B": "DG11", "6C": "DG12", "6D": "DG13", "6E": "DG14",
             "6F": "DG15", "77": "SOD"}
@@ -18,11 +22,14 @@ class CccdTab(ttk.Frame):
         self.get_reader, self.set_status = get_reader, set_status
         self.q = queue.Queue()
         self.photo = None
+        self.report = None
         self.want_extra = tk.BooleanVar(value=True)
         self.want_photo = tk.BooleanVar(value=False)
 
         box = ttk.LabelFrame(self, text="Khóa mở thẻ: 3 thông tin in ở dòng MRZ mặt sau CCCD", padding=8)
         box.pack(fill="x")
+        ttk.Button(box, text="Chọn ảnh mặt sau CCCD, OCR MRZ tự điền...", command=self.ocr_mrz).grid(
+            row=5, column=0, columnspan=3, sticky="w", pady=(6, 0))
         ttk.Label(box, text="Dòng MRZ 1:").grid(row=0, column=0, sticky="e")
         self.mrz1 = ttk.Entry(box, width=34, font=("Consolas", 10))
         self.mrz1.grid(row=0, column=1, padx=4, pady=2, sticky="w")
@@ -49,6 +56,7 @@ class CccdTab(ttk.Frame):
         ttk.Checkbutton(opt, text="Đọc ảnh chân dung (DG2, chậm hơn)",
                         variable=self.want_photo).pack(side="left", padx=10)
         ttk.Button(opt, text="Xóa kết quả", command=self.clear).pack(side="right")
+        report_ui.add_buttons(opt, lambda: self.report, "CCCD")
 
         self.progress = ttk.Label(self, text="", foreground="#555")
         self.progress.pack(fill="x")
@@ -75,10 +83,38 @@ class CccdTab(ttk.Frame):
             self.doe.delete(0, "end")
             self.doe.insert(0, l2[8:14])
 
+    def ocr_mrz(self):
+        path = filedialog.askopenfilename(
+            title="Chọn ảnh mặt sau CCCD (thấy rõ 3 dòng MRZ ở đáy thẻ)",
+            filetypes=[("Ảnh", "*.jpg *.jpeg *.png *.bmp *.tif *.tiff"), ("Tất cả", "*.*")])
+        if not path:
+            return
+        self.set_status("Đang OCR dòng MRZ...")
+
+        def work():
+            try:
+                self.q.put(("mrz", mrz.parse(ocr_win.ocr_image_multicrop(path))))
+            except Exception as e:  # noqa: BLE001
+                self.q.put(("error", f"OCR lỗi: {e}"))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def apply_mrz(self, r):
+        if r is None:
+            self.set_status("Không nhận ra dòng MRZ. Chụp sát, đủ sáng, thấy rõ 3 dòng chữ dưới đáy mặt sau thẻ.")
+            return
+        doc, dob, doe, note = r
+        for entry, val in ((self.doc, doc), (self.dob, dob), (self.doe, doe)):
+            if val:
+                entry.delete(0, "end")
+                entry.insert(0, val)
+        self.set_status(note + " Kiểm tra lại các ô rồi bấm Đọc CCCD.")
+
     def clear(self):
         self.out.delete("1.0", "end")
         self.img_label.config(image="", text="")
         self.photo = None
+        self.report = None
         self.progress.config(text="")
 
     # ---- đọc thẻ (luồng nền)
@@ -115,13 +151,14 @@ class CccdTab(ttk.Frame):
 
             lines = ["Xác thực BAC thành công.", ""]
             com = sess.read_file(bac.FILES["COM"])
-            present = []
+            present, lds, mrz_lines, fields, extras = [], "", [], {}, {}
             if com:
                 for tag, val, _ in bac.parse_tlv(_strip_head(com)):
                     if tag == "5C":
                         present = [DG_NAMES.get(f"{b:02X}", f"{b:02X}") for b in val]
                     if tag == "5F01":
-                        lines.append(f"Phiên bản LDS: {val.decode('ascii', 'replace')}")
+                        lds = val.decode("ascii", "replace")
+                        lines.append(f"Phiên bản LDS: {lds}")
                 lines.append("Các file dữ liệu có trên thẻ: " + (", ".join(present) or "(không rõ)"))
                 lines.append("")
 
@@ -146,8 +183,10 @@ class CccdTab(ttk.Frame):
                         data = None
                         lines += ["", f"=== {name}: lỗi {e} ==="]
                     if data:
+                        dump = bac.dump_tlv(_strip_head(data))
+                        extras[name] = (len(data), dump, data)
                         lines += ["", f"=== {name} ({len(data)} byte) ==="]
-                        lines += bac.dump_tlv(_strip_head(data))
+                        lines += dump
                     elif name in present:
                         lines += ["", f"=== {name}: bị khóa hoặc không đọc được ==="]
 
@@ -167,7 +206,8 @@ class CccdTab(ttk.Frame):
 
             lines += ["", "Lưu ý: chưa xác thực chữ ký số (SOD) nên chưa chứng minh dữ liệu là nguyên bản.",
                       "Dữ liệu chỉ hiển thị trên màn hình này, không được lưu hay gửi đi."]
-            self.q.put(("done", ("\n".join(lines), img)))
+            rep = cccd_report.build(fields, mrz_lines, lds, present, extras, img, card.atr, reader)
+            self.q.put(("done", ("\n".join(lines), img, rep)))
         except Exception as e:  # noqa: BLE001
             self.q.put(("error", str(e)))
         finally:
@@ -180,12 +220,14 @@ class CccdTab(ttk.Frame):
                 kind, p = self.q.get_nowait()
                 if kind == "progress":
                     self.progress.config(text=p)
+                elif kind == "mrz":
+                    self.apply_mrz(p)
                 elif kind == "error":
                     self.progress.config(text="")
                     self.out.insert("end", "LỖI: " + p)
                     self.set_status("Đọc CCCD thất bại.")
                 elif kind == "done":
-                    text, img = p
+                    text, img, self.report = p
                     self.progress.config(text="")
                     self.out.insert("end", text)
                     self.show_image(img)

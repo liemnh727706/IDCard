@@ -1,6 +1,6 @@
 package vn.edu.hcmuaf.nlu.emvreader
 
-class CccdResult(val text: String, val photo: ByteArray?)
+class CccdResult(val text: String, val photo: ByteArray?, val report: Report)
 
 /** Đọc CCCD gắn chip (eMRTD) qua NFC: BAC, rồi DG1 và tùy chọn DG11/12/13, DG2. */
 object CccdReader {
@@ -28,16 +28,20 @@ object CccdReader {
 
         val sb = StringBuilder("Xác thực BAC thành công.\n\n")
         val present = mutableListOf<String>()
+        var lds = ""
+        val fields = LinkedHashMap<String, String>()
+        val mrzLines = mutableListOf<String>()
+        val extras = LinkedHashMap<String, Pair<String, ByteArray>>()
         s.readFile(FILES.getValue("COM"))?.let { com ->
             for (n in TlvParser.parse(stripHead(com))) {
                 if (n.tag == "5C") n.value.forEach { present.add(DG_NAMES[it.toInt() and 0xFF] ?: "%02X".format(it)) }
-                if (n.tag == "5F01") sb.append("Phiên bản LDS: ").append(String(n.value, Charsets.US_ASCII)).append('\n')
+                if (n.tag == "5F01") { lds = String(n.value, Charsets.US_ASCII); sb.append("Phiên bản LDS: ").append(lds).append('\n') }
             }
             sb.append("Các file dữ liệu có trên thẻ: ").append(present.joinToString(", ").ifEmpty { "(không rõ)" }).append("\n\n")
         }
 
         val dg1 = s.readFile(FILES.getValue("DG1"))
-        if (dg1 != null) sb.append(formatDg1(dg1)) else sb.append("Không đọc được DG1.\n")
+        if (dg1 != null) sb.append(formatDg1(dg1, fields, mrzLines)) else sb.append("Không đọc được DG1.\n")
 
         if (extra) {
             for (name in listOf("DG11", "DG12", "DG13")) {
@@ -70,7 +74,7 @@ object CccdReader {
 
         sb.append("\nLưu ý: chưa xác thực chữ ký số (SOD) nên chưa chứng minh dữ liệu là nguyên bản.\n")
         sb.append("Dữ liệu chỉ hiển thị trên màn hình này, không được lưu hay gửi đi.\n")
-        return CccdResult(sb.toString(), photoBytes)
+        return CccdResult(sb.toString(), photoBytes, CccdReport.build(fields, mrzLines, lds, present, extras, photoBytes))
     }
 
     private fun stripHead(f: ByteArray): ByteArray {
@@ -79,7 +83,7 @@ object CccdReader {
         return if (l < 0x80) f.copyOfRange(2, f.size) else f.copyOfRange(2 + (l and 0x7F), f.size)
     }
 
-    private fun formatDg1(dg1: ByteArray): String {
+    private fun formatDg1(dg1: ByteArray, fieldsOut: MutableMap<String, String>, mrzOut: MutableList<String>): String {
         var mrz = ""
         for (n in TlvParser.parse(stripHead(dg1))) {
             if (n.tag == "5F1F") mrz = String(n.value, Charsets.US_ASCII)
@@ -89,7 +93,11 @@ object CccdReader {
         if (mrz.length == 90) {
             val l1 = mrz.substring(0, 30); val l2 = mrz.substring(30, 60); val l3 = mrz.substring(60, 90)
             sb.append(l1).append('\n').append(l2).append('\n').append(l3).append("\n\n")
-            fun f(k: String, v: String) = sb.append("%-24s: %s\n".format(k, v))
+            mrzOut.addAll(listOf(l1, l2, l3))
+            fun f(k: String, v: String) {
+                fieldsOut[k] = v
+                sb.append("%-24s: %s\n".format(k, v))
+            }
             f("Loại giấy tờ", l1.substring(0, 2).replace("<", ""))
             f("Quốc gia cấp", l1.substring(2, 5))
             f("Số giấy tờ", l1.substring(5, 14).replace("<", ""))

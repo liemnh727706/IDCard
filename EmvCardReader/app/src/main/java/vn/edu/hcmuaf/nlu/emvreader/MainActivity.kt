@@ -1,6 +1,9 @@
 package vn.edu.hcmuaf.nlu.emvreader
 
 import android.app.Activity
+import android.app.AlertDialog
+import android.content.Context
+import android.print.PrintManager
 import android.content.Intent
 import android.net.Uri
 import android.provider.MediaStore
@@ -41,6 +44,11 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
     private lateinit var etDoe: EditText
     private lateinit var ivPhoto: ImageView
     @Volatile private var cccdMode = false
+    @Volatile private var lastEmv: EmvSummary? = null
+    @Volatile private var lastCccd: Report? = null
+    @Volatile private var lastKind = ""
+    private lateinit var chkFullPan: CheckBox
+    private var pendingSave: Report? = null
 
     @Volatile private var chipInfo: ChipCardInfo? = null
     @Volatile private var ocrInfo: OcrCardInfo? = null
@@ -70,6 +78,10 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
             else "Đang chờ NFC... Áp thẻ vào mặt sau điện thoại và giữ yên."
         }
         findViewById<Button>(R.id.btnFill).setOnClickListener { fillFromMrz() }
+        findViewById<Button>(R.id.btnMrzOcr).setOnClickListener { captureCard(REQ_MRZ) }
+        chkFullPan = findViewById(R.id.chkFullPan)
+        findViewById<Button>(R.id.btnExport).setOnClickListener { withReport { exportPdf(it) } }
+        findViewById<Button>(R.id.btnPrint).setOnClickListener { withReport { printReport(it) } }
         findViewById<Button>(R.id.btnClear).setOnClickListener {
             tvLog.text = ""
         }
@@ -125,6 +137,61 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
         }
     }
 
+    /** Báo cáo của lần đọc gần nhất (CCCD hoặc thẻ ngân hàng). */
+    private fun currentReport(): Report? = when (lastKind) {
+        "cccd" -> lastCccd
+        "emv" -> lastEmv?.let { EmvReport.build(it, ocrInfo, chkFullPan.isChecked) }
+        else -> null
+    }
+
+    private fun withReport(action: (Report) -> Unit) {
+        val report = currentReport()
+        if (report == null) {
+            Toast.makeText(this, "Hãy đọc thẻ trước khi xuất báo cáo.", Toast.LENGTH_LONG).show()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Dữ liệu cá nhân nhạy cảm")
+            .setMessage("Báo cáo chứa dữ liệu cá nhân của chủ thẻ. Chỉ tiếp tục nếu đây là thẻ của bạn hoặc chủ thẻ đã đồng ý; hãy bảo quản file và bản in cẩn thận.")
+            .setPositiveButton("Tiếp tục") { _, _ -> action(report) }
+            .setNegativeButton("Hủy", null)
+            .show()
+    }
+
+    private fun exportPdf(report: Report) {
+        pendingSave = report
+        val ts = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date())
+        val prefix = if (lastKind == "cccd") "CCCD" else "TheNganHang"
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .setType("application/pdf")
+            .putExtra(Intent.EXTRA_TITLE, "${prefix}_$ts.pdf")
+        try {
+            startActivityForResult(intent, REQ_SAVE)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Không mở được hộp thoại lưu file: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun saveReportTo(resultCode: Int, data: Intent?) {
+        val report = pendingSave
+        pendingSave = null
+        val uri = data?.data
+        if (resultCode != RESULT_OK || report == null || uri == null) return
+        try {
+            contentResolver.openOutputStream(uri)?.use { it.write(PdfExporter.render(report)) }
+            Toast.makeText(this, "Đã lưu báo cáo PDF.", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Lỗi khi lưu PDF: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun printReport(report: Report) {
+        val pm = getSystemService(Context.PRINT_SERVICE) as PrintManager
+        val name = if (lastKind == "cccd") "Bao cao CCCD" else "Bao cao the ngan hang"
+        pm.print(name, ReportPrintAdapter(report, name), null)
+    }
+
     private fun fillFromMrz() {
         val l1 = etMrz1.text.toString().replace(" ", "").uppercase()
         val l2 = etMrz2.text.toString().replace(" ", "").uppercase()
@@ -157,6 +224,8 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
             runOnUiThread { tvStatus.text = "Đang đọc CCCD, giữ thẻ yên..."; ivPhoto.visibility = View.GONE }
             val res = CccdReader.read({ isoDep.transceive(it) }, doc, dob, doe,
                 input[3].toBoolean(), input[4].toBoolean()) { p -> runOnUiThread { tvStatus.text = p } }
+            lastCccd = res.report
+            lastKind = "cccd"
             postLog("========== KẾT QUẢ ĐỌC CCCD ==========\n" + res.text)
             res.photo?.takeIf { CccdReader.isJpeg(it) }?.let { bytes ->
                 val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
@@ -171,7 +240,7 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
         }
     }
 
-    private fun captureCard() {
+    private fun captureCard(req: Int = REQ_CAPTURE) {
         val dir = File(cacheDir, "images").apply { mkdirs() }
         val file = File(dir, "card.jpg")
         photoFile = file
@@ -180,7 +249,7 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
             .putExtra(MediaStore.EXTRA_OUTPUT, uri)
             .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
         try {
-            startActivityForResult(intent, REQ_CAPTURE)
+            startActivityForResult(intent, req)
         } catch (e: Exception) {
             Toast.makeText(this, "Không mở được camera: ${e.message}", Toast.LENGTH_LONG).show()
         }
@@ -189,21 +258,41 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_SAVE) {
+            saveReportTo(resultCode, data)
+            return
+        }
         val file = photoFile
-        if (requestCode != REQ_CAPTURE || resultCode != RESULT_OK || file == null || !file.exists()) return
-        tvCompare.text = "Đang OCR..."
+        if ((requestCode != REQ_CAPTURE && requestCode != REQ_MRZ) || resultCode != RESULT_OK || file == null || !file.exists()) return
+        val forMrz = requestCode == REQ_MRZ
+        if (forMrz) tvStatus.text = "Đang OCR dòng MRZ..." else tvCompare.text = "Đang OCR..."
         val image = InputImage.fromFilePath(this, Uri.fromFile(file))
         TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
             .process(image)
             .addOnSuccessListener { text ->
-                ocrInfo = OcrParser.parse(text.text)
                 file.delete()
-                updateComparison()
+                if (forMrz) {
+                    applyMrz(Mrz.parse(text.text))
+                } else {
+                    ocrInfo = OcrParser.parse(text.text)
+                    updateComparison()
+                }
             }
             .addOnFailureListener { e ->
                 file.delete()
-                tvCompare.text = "OCR lỗi: ${e.message}"
+                if (forMrz) tvStatus.text = "OCR lỗi: ${e.message}" else tvCompare.text = "OCR lỗi: ${e.message}"
             }
+    }
+
+    private fun applyMrz(r: MrzResult?) {
+        if (r == null) {
+            tvStatus.text = "Không nhận ra dòng MRZ. Chụp sát, đủ sáng, thấy rõ 3 dòng chữ dưới đáy mặt sau thẻ."
+            return
+        }
+        r.doc?.let { etDoc.setText(it) }
+        r.dob?.let { etDob.setText(it) }
+        r.doe?.let { etDoe.setText(it) }
+        tvStatus.text = r.note + " Kiểm tra lại các ô rồi áp thẻ để đọc."
     }
 
     private fun updateComparison() {
@@ -263,6 +352,8 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
             sb.append("  RSP: ${TlvParser.toHex(step.response)}\n")
         }
 
+        lastEmv = EmvReport.summarize(result.allTlvByAid, result.discoveredAids, sb.toString())
+        if (lastEmv != null) lastKind = "emv"
         postLog(sb.toString())
     }
 
@@ -313,5 +404,7 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
 
     companion object {
         private const val REQ_CAPTURE = 1001
+        private const val REQ_MRZ = 1002
+        private const val REQ_SAVE = 1003
     }
 }
