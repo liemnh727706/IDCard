@@ -13,7 +13,14 @@ import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.nfc.tech.IsoDep
 import android.os.Bundle
+import android.graphics.BitmapFactory
+import android.view.View
 import android.widget.Button
+import android.widget.CheckBox
+import android.widget.EditText
+import android.widget.ImageView
+import java.util.concurrent.Callable
+import java.util.concurrent.FutureTask
 import android.widget.TextView
 import android.widget.Toast
 
@@ -24,6 +31,16 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
     private lateinit var tvLog: TextView
     private lateinit var tvCompare: TextView
     private var photoFile: File? = null
+    private lateinit var chkCccd: CheckBox
+    private lateinit var chkExtra: CheckBox
+    private lateinit var chkPhoto: CheckBox
+    private lateinit var etMrz1: EditText
+    private lateinit var etMrz2: EditText
+    private lateinit var etDoc: EditText
+    private lateinit var etDob: EditText
+    private lateinit var etDoe: EditText
+    private lateinit var ivPhoto: ImageView
+    @Volatile private var cccdMode = false
 
     @Volatile private var chipInfo: ChipCardInfo? = null
     @Volatile private var ocrInfo: OcrCardInfo? = null
@@ -36,6 +53,23 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
         tvLog = findViewById(R.id.tvLog)
         tvCompare = findViewById(R.id.tvCompare)
         findViewById<Button>(R.id.btnOcr).setOnClickListener { captureCard() }
+        chkCccd = findViewById(R.id.chkCccd)
+        chkExtra = findViewById(R.id.chkExtra)
+        chkPhoto = findViewById(R.id.chkPhoto)
+        etMrz1 = findViewById(R.id.etMrz1)
+        etMrz2 = findViewById(R.id.etMrz2)
+        etDoc = findViewById(R.id.etDoc)
+        etDob = findViewById(R.id.etDob)
+        etDoe = findViewById(R.id.etDoe)
+        ivPhoto = findViewById(R.id.ivPhoto)
+        val llCccd = findViewById<View>(R.id.llCccd)
+        chkCccd.setOnCheckedChangeListener { _, checked ->
+            cccdMode = checked
+            llCccd.visibility = if (checked) View.VISIBLE else View.GONE
+            tvStatus.text = if (checked) "Chế độ CCCD: nhập khóa rồi áp CCCD vào mặt sau điện thoại."
+            else "Đang chờ NFC... Áp thẻ vào mặt sau điện thoại và giữ yên."
+        }
+        findViewById<Button>(R.id.btnFill).setOnClickListener { fillFromMrz() }
         findViewById<Button>(R.id.btnClear).setOnClickListener {
             tvLog.text = ""
         }
@@ -74,6 +108,11 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
             return
         }
 
+        if (cccdMode) {
+            readCccd(isoDep)
+            return
+        }
+
         try {
             isoDep.connect()
             val reader = EmvReader(isoDep)
@@ -81,6 +120,52 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
             renderResult(result)
         } catch (e: Exception) {
             postLog("Lỗi khi đọc thẻ: ${e.message}")
+        } finally {
+            try { isoDep.close() } catch (_: Exception) {}
+        }
+    }
+
+    private fun fillFromMrz() {
+        val l1 = etMrz1.text.toString().replace(" ", "").uppercase()
+        val l2 = etMrz2.text.toString().replace(" ", "").uppercase()
+        if (l1.length >= 14) etDoc.setText(l1.substring(5, 14).replace("<", ""))
+        if (l2.length >= 14) {
+            etDob.setText(l2.substring(0, 6))
+            etDoe.setText(l2.substring(8, 14))
+        }
+    }
+
+    private fun <T> onUiSync(block: () -> T): T {
+        val task = FutureTask(Callable { block() })
+        runOnUiThread(task)
+        return task.get()
+    }
+
+    private fun readCccd(isoDep: IsoDep) {
+        val input = onUiSync {
+            arrayOf(etDoc.text.toString().trim().uppercase(), etDob.text.toString().trim(),
+                etDoe.text.toString().trim(), chkExtra.isChecked.toString(), chkPhoto.isChecked.toString())
+        }
+        val (doc, dob, doe) = input
+        if (doc.isEmpty() || dob.length != 6 || doe.length != 6 || !dob.all { it.isDigit() } || !doe.all { it.isDigit() }) {
+            postLog("Nhập đủ số giấy tờ, ngày sinh và ngày hết hạn (6 chữ số YYMMDD) trước khi áp thẻ.")
+            return
+        }
+        try {
+            isoDep.connect()
+            isoDep.timeout = 10000
+            runOnUiThread { tvStatus.text = "Đang đọc CCCD, giữ thẻ yên..."; ivPhoto.visibility = View.GONE }
+            val res = CccdReader.read({ isoDep.transceive(it) }, doc, dob, doe,
+                input[3].toBoolean(), input[4].toBoolean()) { p -> runOnUiThread { tvStatus.text = p } }
+            postLog("========== KẾT QUẢ ĐỌC CCCD ==========\n" + res.text)
+            res.photo?.takeIf { CccdReader.isJpeg(it) }?.let { bytes ->
+                val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                if (bmp != null) runOnUiThread { ivPhoto.setImageBitmap(bmp); ivPhoto.visibility = View.VISIBLE }
+            }
+            runOnUiThread { tvStatus.text = "Đã đọc xong CCCD." }
+        } catch (e: Exception) {
+            postLog("Lỗi đọc CCCD: ${e.message}")
+            runOnUiThread { tvStatus.text = "Đọc CCCD thất bại." }
         } finally {
             try { isoDep.close() } catch (_: Exception) {}
         }

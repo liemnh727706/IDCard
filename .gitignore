@@ -12,3 +12,8 @@ local.properties
 **/.gradle/
 *.apk
 *.aab
+
+__pycache__/
+EmvCardReaderWin/build/
+EmvCardReaderWin/dist/
+EmvCardReaderWin/*.spec

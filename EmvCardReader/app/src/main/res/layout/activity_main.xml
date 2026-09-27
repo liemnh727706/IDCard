@@ -1,57 +1,147 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="12dp">
-
-    <TextView
-        android:id="@+id/tvStatus"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Đang chờ NFC... Áp thẻ vào mặt sau điện thoại."
-        android:textStyle="bold"
-        android:textSize="16sp"
-        android:paddingBottom="8dp" />
+    android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal">
+        android:orientation="vertical"
+        android:padding="12dp">
 
-        <Button
-            android:id="@+id/btnOcr"
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Đang chờ NFC... Áp thẻ vào mặt sau điện thoại."
+            android:textStyle="bold"
+            android:textSize="16sp"
+            android:paddingBottom="8dp" />
+
+        <CheckBox
+            android:id="@+id/chkCccd"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Chụp mặt thẻ (OCR)" />
+            android:text="Chế độ đọc CCCD gắn chip (thay cho thẻ ngân hàng)" />
 
-        <Button
-            android:id="@+id/btnClear"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:id="@+id/llCccd"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Xóa log" />
-    </LinearLayout>
+            android:orientation="vertical"
+            android:visibility="gone">
 
-    <TextView
-        android:id="@+id/tvCompare"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingTop="8dp"
-        android:text="Bước 1: áp thẻ để đọc chip. Bước 2: chụp mặt thẻ có số thẻ và hạn dùng (đặt trên nền tối, đủ sáng, không chói)."
-        android:textSize="14sp" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Khóa mở thẻ: 3 thông tin in ở dòng MRZ mặt sau CCCD. Dán 2 dòng MRZ đầu rồi bấm Điền, hoặc nhập tay."
+                android:textSize="12sp" />
 
-    <ScrollView
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:layout_marginTop="8dp">
+            <EditText
+                android:id="@+id/etMrz1"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Dòng MRZ 1 (30 ký tự)"
+                android:fontFamily="monospace"
+                android:inputType="textCapCharacters|textNoSuggestions"
+                android:textSize="13sp" />
+
+            <EditText
+                android:id="@+id/etMrz2"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Dòng MRZ 2 (30 ký tự)"
+                android:fontFamily="monospace"
+                android:inputType="textCapCharacters|textNoSuggestions"
+                android:textSize="13sp" />
+
+            <Button
+                android:id="@+id/btnFill"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Điền tự động từ MRZ" />
+
+            <EditText
+                android:id="@+id/etDoc"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Số giấy tờ (9 ký tự trong MRZ dòng 1)"
+                android:fontFamily="monospace"
+                android:inputType="textCapCharacters|textNoSuggestions" />
+
+            <EditText
+                android:id="@+id/etDob"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Ngày sinh YYMMDD"
+                android:fontFamily="monospace"
+                android:inputType="number"
+                android:maxLength="6" />
+
+            <EditText
+                android:id="@+id/etDoe"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Ngày hết hạn YYMMDD"
+                android:fontFamily="monospace"
+                android:inputType="number"
+                android:maxLength="6" />
+
+            <CheckBox
+                android:id="@+id/chkExtra"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="Đọc thêm DG11/DG12/DG13 (thông tin bổ sung)" />
+
+            <CheckBox
+                android:id="@+id/chkPhoto"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Đọc ảnh chân dung DG2 (chậm hơn)" />
+
+            <ImageView
+                android:id="@+id/ivPhoto"
+                android:layout_width="160dp"
+                android:layout_height="200dp"
+                android:scaleType="fitStart"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnOcr"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Chụp mặt thẻ (OCR)" />
+
+            <Button
+                android:id="@+id/btnClear"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Xóa log" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvCompare"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="8dp"
+            android:text="Bước 1: áp thẻ để đọc chip. Bước 2: chụp mặt thẻ có số thẻ và hạn dùng (đặt trên nền tối, đủ sáng, không chói)."
+            android:textSize="14sp" />
 
         <TextView
             android:id="@+id/tvLog"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
             android:fontFamily="monospace"
             android:textIsSelectable="true"
             android:textSize="12sp" />
-    </ScrollView>
-</LinearLayout>
+    </LinearLayout>
+</ScrollView>
