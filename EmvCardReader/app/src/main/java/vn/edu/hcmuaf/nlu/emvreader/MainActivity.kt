@@ -130,7 +130,9 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
         } else {
             sb.append("Chưa chụp ảnh mặt thẻ (bấm nút OCR).\n")
         }
-        if (chip == null) {
+        if (chip != null) {
+            sb.append("Nhà phát hành theo chip: ${Banks.describe(chip.pan)}\n")
+        } else {
             sb.append("Chưa đọc chip (áp thẻ vào mặt sau điện thoại).\n")
         }
         if (ocr != null && chip != null) {

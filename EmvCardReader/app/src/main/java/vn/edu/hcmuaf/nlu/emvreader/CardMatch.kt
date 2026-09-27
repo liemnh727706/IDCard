@@ -45,11 +45,11 @@ object CardMatcher {
 
     enum class Level { MATCH, PARTIAL, MISMATCH, MISSING }
 
-    data class Verdict(val panLevel: Level, val expiryLevel: Level, val lines: List<String>) {
+    data class Verdict(val panLevel: Level, val expiryLevel: Level, val bankLevel: Level, val lines: List<String>) {
         val overall: String
             get() = when {
-                panLevel == Level.MATCH && expiryLevel == Level.MATCH -> "KHỚP: số thẻ và hạn dùng in trên thẻ trùng với chip"
-                panLevel == Level.MISMATCH || expiryLevel == Level.MISMATCH -> "KHÔNG KHỚP: dữ liệu in khác với chip, nghi ngờ thẻ bị chỉnh sửa hoặc OCR sai"
+                panLevel == Level.MATCH && expiryLevel == Level.MATCH && bankLevel != Level.MISMATCH -> "KHỚP: số thẻ và hạn dùng in trên thẻ trùng với chip"
+                panLevel == Level.MISMATCH || expiryLevel == Level.MISMATCH || bankLevel == Level.MISMATCH -> "KHÔNG KHỚP: dữ liệu in khác với chip, nghi ngờ thẻ bị chỉnh sửa hoặc OCR sai"
                 else -> "CHƯA KẾT LUẬN: OCR chưa đủ dữ liệu, thử chụp lại rõ hơn"
             }
     }
@@ -96,7 +96,28 @@ object CardMatcher {
             }
         }
 
-        return Verdict(panLevel, expiryLevel, lines)
+        val chipBank = Banks.lookup(chip.pan)
+        val mentioned = Banks.mentionedIn(ocr.rawText)
+        val bankLevel = when {
+            chipBank == null -> {
+                lines.add("Ngân hàng: BIN ${chip.pan.take(6)} chưa có trong bảng tra, không so khớp được")
+                Level.MISSING
+            }
+            mentioned.any { it.bin == chipBank.bin } -> {
+                lines.add("Ngân hàng: chip là ${chipBank.name}, tên in trên thẻ cũng là ${chipBank.name} (khớp)")
+                Level.MATCH
+            }
+            mentioned.isNotEmpty() -> {
+                lines.add("Ngân hàng: chip là ${chipBank.name} nhưng thẻ in tên ${mentioned.joinToString { it.name }}")
+                Level.MISMATCH
+            }
+            else -> {
+                lines.add("Ngân hàng: chip là ${chipBank.name}, OCR không thấy tên ngân hàng in trên thẻ (có thể chỉ có logo)")
+                Level.MISSING
+            }
+        }
+
+        return Verdict(panLevel, expiryLevel, bankLevel, lines)
     }
 
     fun mask(pan: String): String =
