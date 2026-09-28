@@ -158,6 +158,111 @@
             android:text="Hiện đầy đủ số thẻ trong báo cáo thẻ ngân hàng (mặc định che bớt)" />
 
         <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="Kiểm tra chính danh (đối chiếu khuôn mặt)"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Gửi ảnh chân dung trên thẻ (từ CCCD hoặc chụp thẻ sinh viên) và ảnh chụp trực tiếp người cầm thẻ tới FaceID service của bạn (InsightFace, tự host) để so khớp."
+            android:textSize="12sp" />
+
+        <EditText
+            android:id="@+id/etFaceUrl"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Địa chỉ FaceID service, vd http://192.168.1.10:8001"
+            android:inputType="textUri"
+            android:textSize="13sp" />
+
+        <EditText
+            android:id="@+id/etFaceKey"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="X-API-Key"
+            android:inputType="textPassword"
+            android:textSize="13sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Ảnh chân dung trên thẻ"
+                    android:textSize="11sp" />
+
+                <ImageView
+                    android:id="@+id/ivRefPhoto"
+                    android:layout_width="110dp"
+                    android:layout_height="140dp"
+                    android:scaleType="centerCrop"
+                    android:background="#EEEEEE" />
+
+                <Button
+                    android:id="@+id/btnCaptureRef"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textSize="11sp"
+                    android:text="Chụp ảnh thẻ SV" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Ảnh người cầm thẻ (live)"
+                    android:textSize="11sp" />
+
+                <ImageView
+                    android:id="@+id/ivLivePhoto"
+                    android:layout_width="110dp"
+                    android:layout_height="140dp"
+                    android:scaleType="centerCrop"
+                    android:background="#EEEEEE" />
+
+                <Button
+                    android:id="@+id/btnCaptureLive"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textSize="11sp"
+                    android:text="Chụp ảnh live" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnVerifyFace"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Kiểm tra chính danh" />
+
+        <TextView
+            android:id="@+id/tvFaceResult"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="4dp"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
             android:id="@+id/tvCompare"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

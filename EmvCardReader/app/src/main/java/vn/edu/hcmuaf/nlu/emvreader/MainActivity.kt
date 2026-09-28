@@ -26,6 +26,9 @@ import java.util.concurrent.Callable
 import java.util.concurrent.FutureTask
 import android.widget.TextView
 import android.widget.Toast
+import android.graphics.Bitmap
+import android.graphics.Color
+import java.io.ByteArrayOutputStream
 
 class MainActivity : Activity(), NfcAdapter.ReaderCallback {
 
@@ -52,6 +55,15 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
 
     @Volatile private var chipInfo: ChipCardInfo? = null
     @Volatile private var ocrInfo: OcrCardInfo? = null
+
+    // ---- Kiểm tra chính danh (đối chiếu khuôn mặt qua FaceID service tự host) ----
+    private lateinit var etFaceUrl: EditText
+    private lateinit var etFaceKey: EditText
+    private lateinit var ivRefPhoto: ImageView
+    private lateinit var ivLivePhoto: ImageView
+    private lateinit var tvFaceResult: TextView
+    @Volatile private var refPhotoBytes: ByteArray? = null
+    @Volatile private var livePhotoBytes: ByteArray? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -85,6 +97,18 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
         findViewById<Button>(R.id.btnClear).setOnClickListener {
             tvLog.text = ""
         }
+
+        etFaceUrl = findViewById(R.id.etFaceUrl)
+        etFaceKey = findViewById(R.id.etFaceKey)
+        ivRefPhoto = findViewById(R.id.ivRefPhoto)
+        ivLivePhoto = findViewById(R.id.ivLivePhoto)
+        tvFaceResult = findViewById(R.id.tvFaceResult)
+        val facePrefs = getSharedPreferences("faceid", MODE_PRIVATE)
+        etFaceUrl.setText(facePrefs.getString("url", ""))
+        etFaceKey.setText(facePrefs.getString("key", ""))
+        findViewById<Button>(R.id.btnCaptureRef).setOnClickListener { captureCard(REQ_CAPTURE_REF) }
+        findViewById<Button>(R.id.btnCaptureLive).setOnClickListener { captureCard(REQ_CAPTURE_LIVE) }
+        findViewById<Button>(R.id.btnVerifyFace).setOnClickListener { verifyFace() }
 
         nfcAdapter = NfcAdapter.getDefaultAdapter(this)
         if (nfcAdapter == null) {
@@ -229,7 +253,12 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
             postLog("========== KẾT QUẢ ĐỌC CCCD ==========\n" + res.text)
             res.photo?.takeIf { CccdReader.isJpeg(it) }?.let { bytes ->
                 val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                if (bmp != null) runOnUiThread { ivPhoto.setImageBitmap(bmp); ivPhoto.visibility = View.VISIBLE }
+                if (bmp != null) runOnUiThread {
+                    ivPhoto.setImageBitmap(bmp); ivPhoto.visibility = View.VISIBLE
+                    refPhotoBytes = bytes
+                    ivRefPhoto.setImageBitmap(bmp)
+                    tvFaceResult.text = "Đã tự điền ảnh chân dung trên thẻ từ DG2. Chụp thêm ảnh live rồi bấm Kiểm tra chính danh."
+                }
             }
             runOnUiThread { tvStatus.text = "Đã đọc xong CCCD." }
         } catch (e: Exception) {
@@ -260,6 +289,22 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQ_SAVE) {
             saveReportTo(resultCode, data)
+            return
+        }
+        if (requestCode == REQ_CAPTURE_REF || requestCode == REQ_CAPTURE_LIVE) {
+            val f = photoFile
+            if (resultCode == RESULT_OK && f != null && f.exists()) {
+                val bytes = downscaleJpeg(f)
+                f.delete()
+                if (requestCode == REQ_CAPTURE_REF) {
+                    refPhotoBytes = bytes
+                    ivRefPhoto.setImageBitmap(BitmapFactory.decodeByteArray(bytes, 0, bytes.size))
+                } else {
+                    livePhotoBytes = bytes
+                    ivLivePhoto.setImageBitmap(BitmapFactory.decodeByteArray(bytes, 0, bytes.size))
+                }
+                tvFaceResult.text = ""
+            }
             return
         }
         val file = photoFile
@@ -395,6 +440,70 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
         return first + "*".repeat(maskedLen.coerceAtLeast(0)) + last
     }
 
+    /** Nén và giới hạn kích thước ảnh chụp (camera thường ra ảnh vài MB) trước khi gửi đi. */
+    private fun downscaleJpeg(file: File, maxDim: Int = 1024): ByteArray {
+        val opts = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, opts)
+        var sample = 1
+        while (opts.outWidth / sample > maxDim * 2 || opts.outHeight / sample > maxDim * 2) sample *= 2
+        val bmp = BitmapFactory.decodeFile(file.absolutePath, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
+            ?: return file.readBytes()
+        val scale = maxDim.toFloat() / maxOf(bmp.width, bmp.height)
+        val out = if (scale < 1f) Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), (bmp.height * scale).toInt(), true) else bmp
+        val baos = ByteArrayOutputStream()
+        out.compress(Bitmap.CompressFormat.JPEG, 85, baos)
+        return baos.toByteArray()
+    }
+
+    private fun verifyFace() {
+        val url = etFaceUrl.text.toString().trim()
+        val key = etFaceKey.text.toString().trim()
+        val ref = refPhotoBytes
+        val live = livePhotoBytes
+        if (url.isEmpty()) {
+            Toast.makeText(this, "Nhập địa chỉ FaceID service.", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (ref == null || live == null) {
+            Toast.makeText(this, "Cần cả ảnh chân dung trên thẻ và ảnh chụp live.", Toast.LENGTH_LONG).show()
+            return
+        }
+        getSharedPreferences("faceid", MODE_PRIVATE).edit()
+            .putString("url", url).putString("key", key).apply()
+
+        AlertDialog.Builder(this)
+            .setTitle("Dữ liệu sinh trắc học nhạy cảm")
+            .setMessage("Ảnh khuôn mặt sẽ được gửi tới FaceID service bạn tự host tại '$url' qua HTTP thường (không mã hóa). " +
+                "Chỉ thực hiện trên mạng bạn tin cậy (Wi-Fi riêng, không phải Wi-Fi công cộng), và chỉ khi có sự đồng ý của người được chụp ảnh.")
+            .setPositiveButton("Tiếp tục") { _, _ -> doVerifyFace(url, key, ref, live) }
+            .setNegativeButton("Hủy", null)
+            .show()
+    }
+
+    private fun doVerifyFace(url: String, key: String, ref: ByteArray, live: ByteArray) {
+        tvFaceResult.text = "Đang gửi ảnh và so khớp..."
+        tvFaceResult.setTextColor(Color.DKGRAY)
+        Thread {
+            try {
+                val r = FaceIdClient.verify(url, key, ref, live)
+                runOnUiThread {
+                    val pct = "%.1f".format(r.similarity * 100)
+                    tvFaceResult.text = "${r.label} (độ giống $pct%, ngưỡng khớp ${(r.matchThreshold * 100).toInt()}%, " +
+                        "ngưỡng loại ${(r.rejectThreshold * 100).toInt()}%)"
+                    tvFaceResult.setTextColor(when (r.decision) {
+                        "match" -> Color.rgb(0, 140, 0)
+                        "no_match" -> Color.RED
+                        else -> Color.rgb(200, 120, 0)
+                    })
+                }
+            } catch (e: FaceIdException) {
+                runOnUiThread { tvFaceResult.text = e.message; tvFaceResult.setTextColor(Color.RED) }
+            } catch (e: Exception) {
+                runOnUiThread { tvFaceResult.text = "Lỗi: ${e.message}"; tvFaceResult.setTextColor(Color.RED) }
+            }
+        }.start()
+    }
+
     private fun postLog(text: String) {
         runOnUiThread {
             tvLog.append(text)
@@ -406,5 +515,7 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
         private const val REQ_CAPTURE = 1001
         private const val REQ_MRZ = 1002
         private const val REQ_SAVE = 1003
+        private const val REQ_CAPTURE_REF = 1004
+        private const val REQ_CAPTURE_LIVE = 1005
     }
 }
