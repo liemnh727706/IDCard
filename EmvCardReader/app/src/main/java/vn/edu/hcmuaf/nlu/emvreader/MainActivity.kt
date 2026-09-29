@@ -104,8 +104,8 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
         ivLivePhoto = findViewById(R.id.ivLivePhoto)
         tvFaceResult = findViewById(R.id.tvFaceResult)
         val facePrefs = getSharedPreferences("faceid", MODE_PRIVATE)
-        etFaceUrl.setText(facePrefs.getString("url", ""))
-        etFaceKey.setText(facePrefs.getString("key", ""))
+        etFaceUrl.setText(facePrefs.getString("url", DEFAULT_FACE_URL))
+        etFaceKey.setText(facePrefs.getString("key", BuildConfig.FACEID_API_KEY))
         findViewById<Button>(R.id.btnCaptureRef).setOnClickListener { captureCard(REQ_CAPTURE_REF) }
         findViewById<Button>(R.id.btnCaptureLive).setOnClickListener { captureCard(REQ_CAPTURE_LIVE) }
         findViewById<Button>(R.id.btnVerifyFace).setOnClickListener { verifyFace() }
@@ -517,5 +517,6 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
         private const val REQ_SAVE = 1003
         private const val REQ_CAPTURE_REF = 1004
         private const val REQ_CAPTURE_LIVE = 1005
+        private const val DEFAULT_FACE_URL = "https://cropnlu.duckdns.org/faceid"
     }
 }
