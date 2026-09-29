@@ -304,11 +304,18 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
                     ivLivePhoto.setImageBitmap(BitmapFactory.decodeByteArray(bytes, 0, bytes.size))
                 }
                 tvFaceResult.text = ""
+            } else {
+                // Người dùng hủy chụp hoặc camera lỗi: vẫn có thể còn file ảnh dở dang trong cache - xóa luôn.
+                f?.takeIf { it.exists() }?.delete()
             }
             return
         }
+        if (requestCode != REQ_CAPTURE && requestCode != REQ_MRZ) return
         val file = photoFile
-        if ((requestCode != REQ_CAPTURE && requestCode != REQ_MRZ) || resultCode != RESULT_OK || file == null || !file.exists()) return
+        if (resultCode != RESULT_OK || file == null || !file.exists()) {
+            file?.takeIf { it.exists() }?.delete()
+            return
+        }
         val forMrz = requestCode == REQ_MRZ
         if (forMrz) tvStatus.text = "Đang OCR dòng MRZ..." else tvCompare.text = "Đang OCR..."
         val image = InputImage.fromFilePath(this, Uri.fromFile(file))

@@ -22,17 +22,26 @@ class FaceIdException(message: String) : Exception(message)
  * KHÔNG gửi dữ liệu tới bên thứ ba nào - đây là server do bạn dựng và tự vận hành.
  */
 object FaceIdClient {
+    private const val USER_AGENT = "EmvCardReaderApp/1.0 (Android)"
 
     fun verify(baseUrl: String, apiKey: String, imageA: ByteArray, imageB: ByteArray): FaceVerifyResult {
         val url = URL(baseUrl.trimEnd('/') + "/face/verify")
         val boundary = "----EmvCardReader" + UUID.randomUUID().toString()
+        val bodyLength = partLength(boundary, "image_a", "a.jpg", imageA) +
+            partLength(boundary, "image_b", "b.jpg", imageB) +
+            "--$boundary--\r\n".toByteArray().size.toLong()
+
         val conn = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             doOutput = true
             connectTimeout = 8000
-            readTimeout = 30000
+            // Lần gọi đầu tiên sau khi server khởi động có thể mất 10-20s để nạp model InsightFace.
+            readTimeout = 45000
             setRequestProperty("X-API-Key", apiKey)
+            setRequestProperty("User-Agent", USER_AGENT)
             setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            // Biết trước kích thước nên stream thẳng ra socket, không đệm toàn bộ ảnh trong RAM.
+            setFixedLengthStreamingMode(bodyLength)
         }
         try {
             conn.outputStream.use { out ->
@@ -59,16 +68,22 @@ object FaceIdClient {
             throw e
         } catch (e: Exception) {
             throw FaceIdException("Không kết nối được tới FaceID service ($baseUrl): ${e.message}. " +
-                "Kiểm tra điện thoại và máy chạy service có cùng mạng Wi-Fi không, và service có bind ra 0.0.0.0 không.")
+                "Kiểm tra điện thoại có Internet, địa chỉ server đúng chưa, và server có đang chạy không.")
         } finally {
             conn.disconnect()
         }
     }
 
+    private fun partHeader(boundary: String, field: String, filename: String): ByteArray =
+        ("--$boundary\r\n" +
+            "Content-Disposition: form-data; name=\"$field\"; filename=\"$filename\"\r\n" +
+            "Content-Type: image/jpeg\r\n\r\n").toByteArray()
+
+    private fun partLength(boundary: String, field: String, filename: String, data: ByteArray): Long =
+        partHeader(boundary, field, filename).size.toLong() + data.size + 2L // + "\r\n"
+
     private fun writePart(out: OutputStream, boundary: String, field: String, filename: String, data: ByteArray) {
-        out.write("--$boundary\r\n".toByteArray())
-        out.write("Content-Disposition: form-data; name=\"$field\"; filename=\"$filename\"\r\n".toByteArray())
-        out.write("Content-Type: image/jpeg\r\n\r\n".toByteArray())
+        out.write(partHeader(boundary, field, filename))
         out.write(data)
         out.write("\r\n".toByteArray())
     }
