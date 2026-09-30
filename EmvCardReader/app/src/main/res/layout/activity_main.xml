@@ -263,6 +263,31 @@
             android:textStyle="bold" />
 
         <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="Xuất báo cáo kết hợp: thẻ ngân hàng/SV + CCCD + FaceID (đã đọc/kiểm tra ở trên)"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnExportCombined"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Xuất PDF kết hợp" />
+
+            <Button
+                android:id="@+id/btnPrintCombined"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="In báo cáo kết hợp" />
+        </LinearLayout>
+
+        <TextView
             android:id="@+id/tvCompare"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

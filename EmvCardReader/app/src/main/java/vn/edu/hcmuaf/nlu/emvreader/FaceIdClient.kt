@@ -35,8 +35,9 @@ object FaceIdClient {
             requestMethod = "POST"
             doOutput = true
             connectTimeout = 8000
-            // Lần gọi đầu tiên sau khi server khởi động có thể mất 10-20s để nạp model InsightFace.
-            readTimeout = 45000
+            // Lần gọi đầu tiên sau khi server khởi động phải nạp 5 model ONNX của InsightFace từ
+            // đĩa; với server giới hạn 2 CPU, việc này đã đo thực tế mất hơn 45s nên cần margin rộng.
+            readTimeout = 90000
             setRequestProperty("X-API-Key", apiKey)
             setRequestProperty("User-Agent", USER_AGENT)
             setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")

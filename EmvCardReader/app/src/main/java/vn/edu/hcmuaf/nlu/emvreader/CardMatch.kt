@@ -1,12 +1,48 @@
 package vn.edu.hcmuaf.nlu.emvreader
 
+import java.text.Normalizer
+
 data class OcrCardInfo(
     val pans: List<String>,
     val expiries: List<String>,
-    val rawText: String
+    val rawText: String,
+    val name: String? = null
 )
 
-data class ChipCardInfo(val pan: String, val expiryYymm: String?)
+data class ChipCardInfo(val pan: String, val expiryYymm: String?, val name: String = "")
+
+/** Bỏ dấu tiếng Việt (NFD rồi loại ký tự combining), dùng để so khớp tên chip (không dấu) với
+ * tên OCR (có dấu). Dùng chung cho cả đối chiếu thẻ ngân hàng và báo cáo kết hợp. */
+fun stripVietnameseDiacritics(s: String): String {
+    val n = Normalizer.normalize(s, Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "")
+    return n.replace('Đ', 'D').replace('đ', 'd')
+}
+
+fun namesMatch(chipNameNoDiacritics: String, ocrNameWithDiacritics: String): Boolean {
+    val a = stripVietnameseDiacritics(chipNameNoDiacritics).uppercase().trim().split(Regex("\\s+"))
+    val b = stripVietnameseDiacritics(ocrNameWithDiacritics).uppercase().trim().split(Regex("\\s+"))
+    return a.sorted() == b.sorted()
+}
+
+// Nhãn thường in trước họ tên trên thẻ sinh viên/CCCD. So khớp trên bản ĐÃ BỎ DẤU của dòng OCR
+// (không phụ thuộc OCR có nhận đúng dấu ở phần nhãn hay không), rồi cắt lấy phần còn lại của
+// DÒNG GỐC (có dấu) từ đúng vị trí đó - bỏ dấu bằng NFD không đổi số ký tự nên vị trí khớp 1-1.
+private val NAME_LABEL_RE = Regex("(?:ho\\s*va\\s*ten|ho\\s*ten|full\\s*name|name)\\s*[:\\-]?\\s*", RegexOption.IGNORE_CASE)
+
+/** Tìm dòng chứa họ tên có dấu trên ảnh OCR (thẻ sinh viên/CCCD), theo nhãn "Họ và tên"/"Full name". */
+fun extractOcrName(text: String): String? {
+    for (raw in text.lines()) {
+        val line = raw.trim()
+        if (line.isEmpty()) continue
+        val m = NAME_LABEL_RE.find(stripVietnameseDiacritics(line)) ?: continue
+        var candidate = line.substring(m.range.last + 1).trim()
+        candidate = candidate.replace(Regex("[^A-Za-zÀ-ỹ\\s]"), " ").trim().replace(Regex("\\s{2,}"), " ")
+        if (candidate.isEmpty()) continue
+        val words = candidate.split(" ")
+        if (words.size in 2..6 && words.all { it.isNotEmpty() && it[0].isLetter() }) return candidate
+    }
+    return null
+}
 
 object OcrParser {
 
@@ -37,7 +73,7 @@ object OcrParser {
             expiries.add(m.groupValues[2] + m.groupValues[1]) // YYMM
         }
 
-        return OcrCardInfo(pans.toList(), expiries.toList(), text)
+        return OcrCardInfo(pans.toList(), expiries.toList(), text, extractOcrName(text))
     }
 }
 
@@ -45,11 +81,15 @@ object CardMatcher {
 
     enum class Level { MATCH, PARTIAL, MISMATCH, MISSING }
 
-    data class Verdict(val panLevel: Level, val expiryLevel: Level, val bankLevel: Level, val lines: List<String>) {
+    data class Verdict(val panLevel: Level, val expiryLevel: Level, val bankLevel: Level, val nameLevel: Level, val lines: List<String>) {
         val overall: String
             get() = when {
-                panLevel == Level.MATCH && expiryLevel == Level.MATCH && bankLevel != Level.MISMATCH -> "KHỚP: số thẻ và hạn dùng in trên thẻ trùng với chip"
-                panLevel == Level.MISMATCH || expiryLevel == Level.MISMATCH || bankLevel == Level.MISMATCH -> "KHÔNG KHỚP: dữ liệu in khác với chip, nghi ngờ thẻ bị chỉnh sửa hoặc OCR sai"
+                panLevel == Level.MISMATCH || expiryLevel == Level.MISMATCH || bankLevel == Level.MISMATCH || nameLevel == Level.MISMATCH ->
+                    "KHÔNG KHỚP: dữ liệu in khác với chip, nghi ngờ thẻ bị chỉnh sửa hoặc OCR sai"
+                panLevel == Level.MATCH && expiryLevel == Level.MATCH -> {
+                    val base = "KHỚP: số thẻ và hạn dùng in trên thẻ trùng với chip"
+                    if (nameLevel == Level.MATCH) "$base, cả họ tên" else base
+                }
                 else -> "CHƯA KẾT LUẬN: OCR chưa đủ dữ liệu, thử chụp lại rõ hơn"
             }
     }
@@ -117,7 +157,42 @@ object CardMatcher {
             }
         }
 
-        return Verdict(panLevel, expiryLevel, bankLevel, lines)
+        val nameLevel = when {
+            chip.name.isBlank() -> {
+                lines.add("Họ tên: chip không lưu tên, không so khớp được")
+                Level.MISSING
+            }
+            ocr.name != null -> {
+                if (namesMatch(chip.name, ocr.name)) {
+                    lines.add("Họ tên: OCR đọc \"${ocr.name}\" (có dấu), khớp với tên chip \"${chip.name}\" (không dấu)")
+                    Level.MATCH
+                } else {
+                    lines.add("Họ tên: OCR đọc \"${ocr.name}\", KHÔNG khớp với tên chip \"${chip.name}\"")
+                    Level.MISMATCH
+                }
+            }
+            else -> {
+                val toks = stripVietnameseDiacritics(chip.name).uppercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
+                val printed = stripVietnameseDiacritics(ocr.rawText).uppercase()
+                val hit = toks.filter { Regex("(?<![A-Z])$it(?![A-Z])").containsMatchIn(printed) }
+                when {
+                    toks.isNotEmpty() && hit.size == toks.size -> {
+                        lines.add("Họ tên: tên trong chip xuất hiện đủ trên mặt thẻ (khớp, chưa xác định được dạng có dấu)")
+                        Level.MATCH
+                    }
+                    hit.isNotEmpty() -> {
+                        lines.add("Họ tên: chỉ thấy ${hit.size}/${toks.size} từ của tên chip trên mặt thẻ")
+                        Level.PARTIAL
+                    }
+                    else -> {
+                        lines.add("Họ tên: tên trong chip không thấy trên mặt thẻ (hoặc OCR chưa đọc được tên)")
+                        Level.MISMATCH
+                    }
+                }
+            }
+        }
+
+        return Verdict(panLevel, expiryLevel, bankLevel, nameLevel, lines)
     }
 
     fun mask(pan: String): String =

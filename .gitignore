@@ -17,3 +17,4 @@ __pycache__/
 EmvCardReaderWin/build/
 EmvCardReaderWin/dist/
 EmvCardReaderWin/*.spec
+EmvCardReaderWin/faceid_local.json

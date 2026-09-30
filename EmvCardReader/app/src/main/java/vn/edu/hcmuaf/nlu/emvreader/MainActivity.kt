@@ -64,6 +64,11 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
     private lateinit var tvFaceResult: TextView
     @Volatile private var refPhotoBytes: ByteArray? = null
     @Volatile private var livePhotoBytes: ByteArray? = null
+    @Volatile private var faceResult: FaceVerifyResult? = null
+
+    // ---- Dữ liệu dùng để dựng báo cáo kết hợp (thẻ ngân hàng/SV + CCCD + FaceID) ----
+    @Volatile private var ocrImageBytes: ByteArray? = null
+    @Volatile private var cccdPhotoBytes: ByteArray? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -109,6 +114,12 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
         findViewById<Button>(R.id.btnCaptureRef).setOnClickListener { captureCard(REQ_CAPTURE_REF) }
         findViewById<Button>(R.id.btnCaptureLive).setOnClickListener { captureCard(REQ_CAPTURE_LIVE) }
         findViewById<Button>(R.id.btnVerifyFace).setOnClickListener { verifyFace() }
+        findViewById<Button>(R.id.btnExportCombined).setOnClickListener {
+            withCombinedReport { exportPdf(it, "KetHop") }
+        }
+        findViewById<Button>(R.id.btnPrintCombined).setOnClickListener {
+            withCombinedReport { printReport(it, "Bao cao ket hop") }
+        }
 
         nfcAdapter = NfcAdapter.getDefaultAdapter(this)
         if (nfcAdapter == null) {
@@ -174,18 +185,34 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
             Toast.makeText(this, "Hãy đọc thẻ trước khi xuất báo cáo.", Toast.LENGTH_LONG).show()
             return
         }
+        confirmSensitive { action(report) }
+    }
+
+    private fun withCombinedReport(action: (Report) -> Unit) {
+        val report = CombinedReport.build(
+            lastEmv, ocrInfo, chkFullPan.isChecked, ocrImageBytes,
+            lastCccd, cccdPhotoBytes,
+            faceResult, refPhotoBytes, livePhotoBytes
+        )
+        if (report == null) {
+            Toast.makeText(this, "Hãy đọc thẻ ngân hàng/SV hoặc CCCD trước khi xuất báo cáo kết hợp.", Toast.LENGTH_LONG).show()
+            return
+        }
+        confirmSensitive { action(report) }
+    }
+
+    private fun confirmSensitive(action: () -> Unit) {
         AlertDialog.Builder(this)
             .setTitle("Dữ liệu cá nhân nhạy cảm")
             .setMessage("Báo cáo chứa dữ liệu cá nhân của chủ thẻ. Chỉ tiếp tục nếu đây là thẻ của bạn hoặc chủ thẻ đã đồng ý; hãy bảo quản file và bản in cẩn thận.")
-            .setPositiveButton("Tiếp tục") { _, _ -> action(report) }
+            .setPositiveButton("Tiếp tục") { _, _ -> action() }
             .setNegativeButton("Hủy", null)
             .show()
     }
 
-    private fun exportPdf(report: Report) {
+    private fun exportPdf(report: Report, prefix: String = if (lastKind == "cccd") "CCCD" else "TheNganHang") {
         pendingSave = report
         val ts = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date())
-        val prefix = if (lastKind == "cccd") "CCCD" else "TheNganHang"
         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT)
             .addCategory(Intent.CATEGORY_OPENABLE)
             .setType("application/pdf")
@@ -210,9 +237,8 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
         }
     }
 
-    private fun printReport(report: Report) {
+    private fun printReport(report: Report, name: String = if (lastKind == "cccd") "Bao cao CCCD" else "Bao cao the ngan hang") {
         val pm = getSystemService(Context.PRINT_SERVICE) as PrintManager
-        val name = if (lastKind == "cccd") "Bao cao CCCD" else "Bao cao the ngan hang"
         pm.print(name, ReportPrintAdapter(report, name), null)
     }
 
@@ -252,6 +278,7 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
             lastKind = "cccd"
             postLog("========== KẾT QUẢ ĐỌC CCCD ==========\n" + res.text)
             res.photo?.takeIf { CccdReader.isJpeg(it) }?.let { bytes ->
+                cccdPhotoBytes = bytes
                 val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                 if (bmp != null) runOnUiThread {
                     ivPhoto.setImageBitmap(bmp); ivPhoto.visibility = View.VISIBLE
@@ -322,10 +349,12 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
         TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
             .process(image)
             .addOnSuccessListener { text ->
-                file.delete()
                 if (forMrz) {
+                    file.delete()
                     applyMrz(Mrz.parse(text.text))
                 } else {
+                    ocrImageBytes = downscaleJpeg(file)
+                    file.delete()
                     ocrInfo = OcrParser.parse(text.text)
                     updateComparison()
                 }
@@ -373,10 +402,6 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
         val allNodes = result.allTlvByAid.values.flatten()
         val pan = TlvParser.findFirst(allNodes, "5A")?.value?.let { TlvParser.toHex(it).trimEnd('F', 'f') }
         val exp = TlvParser.findFirst(allNodes, "5F24")?.value?.let { TlvParser.toHex(it) }
-        if (pan != null) {
-            chipInfo = ChipCardInfo(pan, exp?.take(4))
-            updateComparison()
-        }
         val sb = StringBuilder()
         sb.append("========== KẾT QUẢ ĐỌC THẺ ==========\n")
         sb.append("Thời điểm: ${java.text.SimpleDateFormat("HH:mm:ss").format(java.util.Date())}\n\n")
@@ -406,6 +431,10 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
 
         lastEmv = EmvReport.summarize(result.allTlvByAid, result.discoveredAids, sb.toString())
         if (lastEmv != null) lastKind = "emv"
+        if (pan != null) {
+            chipInfo = ChipCardInfo(pan, exp?.take(4), lastEmv?.name.orEmpty())
+            updateComparison()
+        }
         postLog(sb.toString())
     }
 
@@ -488,11 +517,12 @@ class MainActivity : Activity(), NfcAdapter.ReaderCallback {
     }
 
     private fun doVerifyFace(url: String, key: String, ref: ByteArray, live: ByteArray) {
-        tvFaceResult.text = "Đang gửi ảnh và so khớp..."
+        tvFaceResult.text = "Đang gửi ảnh và so khớp... (lần đầu sau khi server khởi động có thể mất đến 1 phút)"
         tvFaceResult.setTextColor(Color.DKGRAY)
         Thread {
             try {
                 val r = FaceIdClient.verify(url, key, ref, live)
+                faceResult = r
                 runOnUiThread {
                     val pct = "%.1f".format(r.similarity * 100)
                     tvFaceResult.text = "${r.label} (độ giống $pct%, ngưỡng khớp ${(r.matchThreshold * 100).toInt()}%, " +

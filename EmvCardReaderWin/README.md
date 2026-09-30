@@ -25,6 +25,31 @@ Arial/Courier New của Windows để hiển thị tiếng Việt. Số thẻ ng
 sẽ mở file PDF để in thủ công. File PDF tạm khi in được xóa sau vài phút. Báo cáo chứa dữ liệu cá nhân
 nhạy cảm nên hãy bảo quản cẩn thận.
 
+## So khớp họ tên có dấu (OCR) với tên trên chip (không dấu)
+Chip (thẻ ngân hàng/SV lẫn CCCD) chỉ lưu tên không dấu (ASCII, chuẩn Track1/MRZ). Khi chụp OCR
+mặt thẻ sinh viên, app tìm dòng có nhãn "Họ và tên"/"Full name" để lấy tên **có dấu** nguyên bản,
+rồi so khớp với tên chip sau khi bỏ dấu cả hai bên. Tên có dấu này được dùng làm tên hiển thị
+chính trong báo cáo PDF/in, thay vì chỉ hiện bản không dấu từ chip.
+
+## Tab Xác thực khuôn mặt (FaceID)
+Gọi `POST /face/verify` của FaceID service tự host (InsightFace) tại `cropnlu.duckdns.org/faceid`
+(cùng service dùng cho bản Android) — không phải bên thứ ba. Cấu hình URL/API key lưu vào
+`faceid_local.json` cạnh app (file này **không lên Git**, xem `.gitignore`).
+
+- Ảnh chân dung tham chiếu: lấy tự động từ DG2 của CCCD đã đọc, hoặc chọn file, hoặc chụp webcam.
+- Ảnh live: chụp webcam hoặc chọn file (máy không có webcam thì dùng ảnh có sẵn).
+- Ảnh JPEG2000 (định dạng phổ biến của DG2 trong CCCD) được Pillow giải mã và chuyển sang JPEG
+  chuẩn trước khi gửi, vì OpenCV trên server chưa chắc đọc trực tiếp JPEG2000.
+- Đây **không phải kiểm tra chống giả mạo (liveness)** — chỉ đảm bảo ảnh vừa chụp, không chống
+  được việc chụp lại ảnh in. Ảnh khuôn mặt là dữ liệu sinh trắc học nhạy cảm, app luôn hỏi xác
+  nhận trước khi gửi và không lưu ảnh.
+
+## Xuất báo cáo kết hợp
+Nút "Xuất PDF/TXT/JSON..." ở thanh dưới cùng cửa sổ gộp thông tin đã đọc/xác thực ở cả ba tab:
+họ tên đối chiếu nhiều nguồn (OCR có dấu, chip thẻ ngân hàng/SV, chip CCCD - có báo KHỚP/KHÔNG
+KHỚP giữa các nguồn), thông tin thẻ ngân hàng/SV, thông tin CCCD, và kết quả FaceID nếu đã kiểm
+tra. Cần đọc/OCR ở các tab tương ứng trước, nút này chỉ gộp lại chứ không tự đọc thẻ.
+
 ## Ghi chú
 - Cần dịch vụ Windows "Smart Card" đang chạy và một đầu đọc thẻ tương thích PC/SC.
 - Chế độ contact thường trả cả họ tên chủ thẻ (tag 5F20 hoặc Track1), khác với NFC contactless.

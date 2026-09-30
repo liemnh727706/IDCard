@@ -10,3 +10,5 @@ pyinstaller
 pycryptodome
 pillow
 reportlab
+requests
+opencv-python

@@ -1,9 +1,54 @@
 """Phân tích văn bản OCR mặt thẻ và so khớp với dữ liệu chip."""
 import re
+import unicodedata
 
 import banks
 
 LEVELS = ("MATCH", "PARTIAL", "MISMATCH", "MISSING")
+
+def strip_diacritics(s: str) -> str:
+    n = unicodedata.normalize("NFD", s)
+    n = "".join(c for c in n if unicodedata.category(c) != "Mn")
+    return n.replace("Đ", "D").replace("đ", "d")
+
+
+# Nhãn thường in trước họ tên trên thẻ sinh viên/CCCD. So khớp trên bản ĐÃ BỎ DẤU của dòng OCR
+# (để không phụ thuộc OCR có nhận đúng dấu ở phần nhãn hay không), rồi cắt lấy phần còn lại của
+# DÒNG GỐC (có dấu) từ đúng vị trí đó - bỏ dấu bằng NFD không đổi số ký tự nên vị trí khớp 1-1.
+_NAME_LABEL_RE = re.compile(r"(?:ho\s*va\s*ten|ho\s*ten|full\s*name|name)\s*[:\-]?\s*", re.IGNORECASE)
+
+
+def extract_name(text: str):
+    """Tìm dòng chứa họ tên có dấu trên ảnh OCR (thẻ sinh viên/CCCD), ưu tiên theo nhãn
+    "Họ và tên"/"Full name". Trả về chuỗi tên nguyên dấu, hoặc None nếu không thấy."""
+    best = None
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        m = _NAME_LABEL_RE.search(strip_diacritics(line))
+        candidate = line[m.end():].strip() if m else None
+        if candidate is None:
+            continue
+        # Loại bỏ nhiễu OCR: chỉ giữ chữ cái (có dấu), khoảng trắng, dấu chấm ở cuối
+        candidate = re.sub(r"[^A-Za-zÀ-ỹ\s]", " ", candidate).strip()
+        candidate = re.sub(r"\s{2,}", " ", candidate)
+        if not candidate:
+            continue
+        words = candidate.split(" ")
+        # Tên hợp lệ: 2-6 từ, từ nào cũng viết hoa chữ đầu (OCR thẻ SV/CCCD thường in hoa cả dòng
+        # nên chấp nhận cả ALL-CAPS), không lẫn số.
+        if 2 <= len(words) <= 6 and all(w[0].isalpha() for w in words):
+            best = candidate
+            break
+    return best
+
+
+def name_matches(chip_name_no_diacritics: str, ocr_name_with_diacritics: str) -> bool:
+    """So khớp tên không dấu (chip) với tên có dấu (OCR) sau khi bỏ dấu cả hai."""
+    a = strip_diacritics(chip_name_no_diacritics).upper().split()
+    b = strip_diacritics(ocr_name_with_diacritics).upper().split()
+    return sorted(a) == sorted(b)
 
 
 def parse_ocr(text: str):
@@ -19,7 +64,7 @@ def parse_ocr(text: str):
         v = m.group(2) + m.group(1)
         if v not in exps:
             exps.append(v)
-    return {"pans": pans, "expiries": exps, "text": text}
+    return {"pans": pans, "expiries": exps, "text": text, "name": extract_name(text)}
 
 
 def _fmt(yymm):
@@ -69,14 +114,28 @@ def compare(ocr, chip):
     else:
         lv["bank"] = "MISSING"; lines.append(f"Ngân hàng: chip là {cb[0]}, OCR không thấy tên ngân hàng in (có thể chỉ có logo)")
 
+    ocr_name = ocr.get("name")
     if not chip.name:
         lv["name"] = "MISSING"; lines.append("Họ tên: chip không lưu tên, không so khớp được")
+    elif ocr_name:
+        if name_matches(chip.name, ocr_name):
+            lv["name"] = "MATCH"
+            lines.append(f"Họ tên: OCR đọc \"{ocr_name}\" (có dấu), khớp với tên chip \"{chip.name}\" (không dấu)")
+        else:
+            toks = _name_tokens(chip.name)
+            hit = [t for t in toks if t in strip_diacritics(ocr_name).upper().split()]
+            if toks and hit:
+                lv["name"] = "PARTIAL"
+                lines.append(f"Họ tên: OCR đọc \"{ocr_name}\", chỉ khớp {len(hit)}/{len(toks)} từ so với tên chip \"{chip.name}\"")
+            else:
+                lv["name"] = "MISMATCH"
+                lines.append(f"Họ tên: OCR đọc \"{ocr_name}\", KHÔNG khớp với tên chip \"{chip.name}\"")
     else:
         toks = _name_tokens(chip.name)
         printed = banks.normalize(ocr["text"])
         hit = [t for t in toks if re.search(r"(?<![A-Z])" + t + r"(?![A-Z])", printed)]
         if toks and len(hit) == len(toks):
-            lv["name"] = "MATCH"; lines.append("Họ tên: tên trong chip xuất hiện đủ trên mặt thẻ (khớp)")
+            lv["name"] = "MATCH"; lines.append("Họ tên: tên trong chip xuất hiện đủ trên mặt thẻ (khớp, chưa xác định được dạng có dấu)")
         elif hit:
             lv["name"] = "PARTIAL"; lines.append(f"Họ tên: chỉ thấy {len(hit)}/{len(toks)} từ của tên chip trên mặt thẻ")
         else:

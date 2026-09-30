@@ -94,18 +94,21 @@ object EmvReport {
         val pan = if (fullPan) s.pan else maskPan(s.pan)
         val exp = s.expiryYymm?.let { it.substring(2) + "/" + it.substring(0, 2) } ?: "(không có)"
         val country = if (s.country == "0704") "Việt Nam (704)" else s.country.ifEmpty { "(không có)" }
-        val main = listOf(
+        val main = mutableListOf(
             "Loại thẻ / ứng dụng" to "${s.label} (AID ${s.aid})",
             "Số thẻ (PAN)" to pan + if (fullPan) "" else "  [đã che bớt]",
-            "Hạn dùng (MM/YY)" to exp,
-            "Họ tên chủ thẻ (theo chip)" to s.name.ifEmpty { "(chip không lưu tên)" },
+            "Hạn dùng (MM/YY)" to exp
+        )
+        if (ocr?.name != null) main.add("Họ tên (OCR, có dấu)" to ocr.name)
+        main.add("Họ tên chủ thẻ (theo chip, không dấu)" to s.name.ifEmpty { "(chip không lưu tên)" })
+        main.addAll(listOf(
             "Ngân hàng / nhà phát hành" to Banks.describe(s.pan),
             "Service code" to s.serviceCode.ifEmpty { "(không có)" },
             "Quốc gia phát hành" to country
-        )
+        ))
         val sections = mutableListOf(ReportSection("Thông tin chính", main))
         if (ocr != null) {
-            val v = CardMatcher.compare(ocr, ChipCardInfo(s.pan, s.expiryYymm))
+            val v = CardMatcher.compare(ocr, ChipCardInfo(s.pan, s.expiryYymm, s.name))
             sections.add(ReportSection("Đối chiếu với mặt thẻ (OCR)", listOf("Kết luận" to v.overall),
                 v.lines.joinToString("\n") { "- $it" }))
         }

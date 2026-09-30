@@ -6,7 +6,10 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 import banks
 from cccd_tab import CccdTab
+import combined_report
 import emv
+from faceid_tab import FaceIdTab
+from imgutil import normalize_to_jpeg
 import match
 import ocr_win
 import pcsc
@@ -23,6 +26,7 @@ class App(tk.Tk):
         self.chip = None
         self.result = None
         self.ocr = None
+        self.ocr_image_bytes = None
         self.raw_log = ""
         self.show_full = tk.BooleanVar(value=False)
 
@@ -41,7 +45,16 @@ class App(tk.Tk):
         nb.pack(fill="both", expand=True, padx=8, pady=6)
         emv_tab = ttk.Frame(nb, padding=4)
         nb.add(emv_tab, text="Thẻ ngân hàng (EMV)")
-        nb.add(CccdTab(nb, lambda: self.cb.get(), lambda t: self.status.config(text=t)), text="Căn cước công dân")
+        self.cccd_tab = CccdTab(nb, lambda: self.cb.get(), lambda t: self.status.config(text=t))
+        nb.add(self.cccd_tab, text="Căn cước công dân")
+        self.faceid_tab = FaceIdTab(nb, lambda: self.cccd_tab.photo_bytes, lambda: None)
+        nb.add(self.faceid_tab, text="Xác thực khuôn mặt (FaceID)")
+
+        combined_bar = ttk.Frame(self, padding=(8, 0))
+        combined_bar.pack(fill="x")
+        report_ui.add_buttons(combined_bar, self.build_combined_report, "KetHop")
+        ttk.Label(combined_bar, text="  ↑ Xuất báo cáo kết hợp: thẻ ngân hàng/SV + CCCD + FaceID (đã đọc/kiểm tra ở các tab trên)",
+                 foreground="#555").pack(side="left")
 
         bar = ttk.Frame(emv_tab)
         bar.pack(fill="x")
@@ -114,7 +127,10 @@ class App(tk.Tk):
 
         def work():
             try:
-                self.q.put(("ocr", ocr_win.ocr_image(path)))
+                with open(path, "rb") as f:
+                    img_bytes = normalize_to_jpeg(f.read())
+                text = ocr_win.ocr_image(path)
+                self.q.put(("ocr", (text, img_bytes)))
             except Exception as e:  # noqa: BLE001
                 self.q.put(("error", f"OCR lỗi: {e}"))
 
@@ -131,7 +147,9 @@ class App(tk.Tk):
                     self.status.config(text="Đã đọc xong chip." if self.chip.pan else
                                        "Đọc được thẻ nhưng không thấy PAN, xem log bên dưới.")
                 elif kind == "ocr":
-                    self.ocr = match.parse_ocr(payload)
+                    text, img_bytes = payload
+                    self.ocr = match.parse_ocr(text)
+                    self.ocr_image_bytes = img_bytes
                     self.status.config(text="Đã OCR xong.")
                 else:
                     self.status.config(text=payload)
@@ -160,11 +178,14 @@ class App(tk.Tk):
         pan = chip.pan if full else emv.mask_pan_digits(chip.pan)
         exp = f"{chip.expiry_yymm[2:]}/{chip.expiry_yymm[:2]}" if chip.expiry_yymm else "(không có)"
         country = {"0704": "Việt Nam (704)"}.get(chip.country, chip.country or "(không có)")
+        ocr_name = self.ocr.get("name") if self.ocr else None
         main = [("Loại thẻ / ứng dụng", f"{chip.label} (AID {chip.aid})"),
                 ("Số thẻ (PAN)", pan + ("" if full else "  [đã che bớt]")),
-                ("Hạn dùng (MM/YY)", exp),
-                ("Họ tên chủ thẻ (theo chip)", chip.name or "(chip không lưu tên)"),
-                ("Ngân hàng / nhà phát hành", banks.describe(chip.pan)),
+                ("Hạn dùng (MM/YY)", exp)]
+        if ocr_name:
+            main.append(("Họ tên (OCR, có dấu)", ocr_name))
+        main.append(("Họ tên chủ thẻ (theo chip, không dấu)", chip.name or "(chip không lưu tên)"))
+        main += [("Ngân hàng / nhà phát hành", banks.describe(chip.pan)),
                 ("Service code", chip.service_code or "(không có)"),
                 ("Quốc gia phát hành", country)]
         sections = [{"heading": "Thông tin chính", "rows": main}]
@@ -182,6 +203,9 @@ class App(tk.Tk):
         note = report.SENSITIVE_NOTE + (" Số thẻ đã được che bớt." if not full else " Số thẻ hiển thị ĐẦY ĐỦ.")
         return report.new_report("Báo cáo đọc thẻ ngân hàng gắn chip", sections, note)
 
+    def build_combined_report(self):
+        return combined_report.build(self)
+
     def render(self):
         chip = self.chip
         full = self.show_full.get()
@@ -195,6 +219,8 @@ class App(tk.Tk):
                   f"Service code  : {chip.service_code or '(không có)'}",
                   f"Nhà phát hành : {banks.describe(chip.pan)}",
                   f"Họ tên (chip) : {chip.name or '(chip không lưu tên)'}"]
+            if self.ocr and self.ocr.get("name"):
+                s.append(f"Họ tên (OCR)  : {self.ocr['name']}  (có dấu)")
         else:
             s.append("Chưa có dữ liệu chip.")
         if self.ocr and chip and chip.pan:

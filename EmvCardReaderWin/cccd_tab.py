@@ -22,7 +22,9 @@ class CccdTab(ttk.Frame):
         self.get_reader, self.set_status = get_reader, set_status
         self.q = queue.Queue()
         self.photo = None
+        self.photo_bytes = None
         self.report = None
+        self.fields = None
         self.want_extra = tk.BooleanVar(value=True)
         self.want_photo = tk.BooleanVar(value=False)
 
@@ -114,7 +116,9 @@ class CccdTab(ttk.Frame):
         self.out.delete("1.0", "end")
         self.img_label.config(image="", text="")
         self.photo = None
+        self.photo_bytes = None
         self.report = None
+        self.fields = None
         self.progress.config(text="")
 
     # ---- đọc thẻ (luồng nền)
@@ -207,7 +211,7 @@ class CccdTab(ttk.Frame):
             lines += ["", "Lưu ý: chưa xác thực chữ ký số (SOD) nên chưa chứng minh dữ liệu là nguyên bản.",
                       "Dữ liệu chỉ hiển thị trên màn hình này, không được lưu hay gửi đi."]
             rep = cccd_report.build(fields, mrz_lines, lds, present, extras, img, card.atr, reader)
-            self.q.put(("done", ("\n".join(lines), img, rep)))
+            self.q.put(("done", ("\n".join(lines), img, rep, fields)))
         except Exception as e:  # noqa: BLE001
             self.q.put(("error", str(e)))
         finally:
@@ -227,7 +231,8 @@ class CccdTab(ttk.Frame):
                     self.out.insert("end", "LỖI: " + p)
                     self.set_status("Đọc CCCD thất bại.")
                 elif kind == "done":
-                    text, img, self.report = p
+                    text, img, self.report, self.fields = p
+                    self.photo_bytes = img
                     self.progress.config(text="")
                     self.out.insert("end", text)
                     self.show_image(img)
