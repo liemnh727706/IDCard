@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct EmvTabView: View {
+    @EnvironmentObject var appState: AppState
     @State private var status = "Chạm 'Đọc thẻ chip' rồi áp thẻ vào đỉnh trên của iPhone."
     @State private var summary: EmvSummary?
     @State private var ocr: OcrCardInfo?
@@ -44,6 +45,7 @@ struct EmvTabView: View {
         .sheet(isPresented: $showImagePicker) {
             ImagePicker(sourceType: .camera) { image in
                 status = "Đang OCR..."
+                appState.ocrImage = image.jpegData(compressionQuality: 0.85)
                 TextRecognizer.recognize(image) { result in
                     DispatchQueue.main.async {
                         switch result {
@@ -54,6 +56,9 @@ struct EmvTabView: View {
                 }
             }
         }
+        .onChange(of: summary?.pan) { _ in appState.emvSummary = summary }
+        .onChange(of: ocr?.rawText) { _ in appState.ocr = ocr }
+        .onChange(of: showFull) { appState.fullPan = $0 }
     }
 
     @ViewBuilder private func summaryView(_ s: EmvSummary) -> some View {
@@ -65,7 +70,7 @@ struct EmvTabView: View {
             row("Nhà phát hành", Banks.describe(s.pan))
             row("Họ tên (chip)", s.name.isEmpty ? "(chip không lưu tên)" : s.name)
             if let ocr = ocr {
-                let v = CardMatcher.compare(ocr, ChipCardInfo(pan: s.pan, expiryYymm: s.expiryYymm))
+                let v = CardMatcher.compare(ocr, ChipCardInfo(pan: s.pan, expiryYymm: s.expiryYymm, name: s.name))
                 Divider()
                 ForEach(v.lines, id: \.self) { Text("- " + $0).font(.footnote) }
                 Text(v.overall).font(.subheadline).bold()

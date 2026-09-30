@@ -28,10 +28,31 @@ trên máy Windows. Project này được thiết kế để:
   một hàm gửi APDU đồng bộ (`Transceiver`), để `Core/` không cần biết gì về CoreNFC.
 - `Sources/OCR/TextRecognizer.swift` — OCR bằng Vision framework, chạy trên máy, không gửi ảnh
   đi đâu.
-- `Sources/App/` — giao diện SwiftUI (`EmvTabView`, `CccdTabView`) và xuất PDF
+- `Sources/App/` — giao diện SwiftUI 4 tab (`EmvTabView`, `CccdTabView`, `FaceIdTabView`,
+  `CombinedTabView`), chia sẻ dữ liệu qua `AppState` (ObservableObject), xuất PDF
   (`PdfBuilder.swift`, dùng `UIGraphicsPDFRenderer`) + in qua `UIPrintInteractionController`.
+- `Sources/Core/FaceIdClient.swift` — gọi FaceID service tự host (InsightFace) tại
+  `cropnlu.duckdns.org/faceid` (cùng service dùng cho bản Android/Windows) để so khớp 1:1 ảnh
+  chân dung với ảnh chụp live. Không gửi dữ liệu tới bên thứ ba nào khác.
+- `Sources/Core/CombinedReport.swift` — gộp thông tin thẻ ngân hàng/SV + CCCD + FaceID (kèm ảnh
+  mặt thẻ OCR, ảnh CCCD, ảnh tham chiếu/live FaceID) thành một báo cáo, cùng logic với
+  `CombinedReport.kt`/`combined_report.py`.
 - `Tests/` — XCTest, gồm vector mẫu ICAO 9303 Part 11 Appendix D cho BAC (cùng vector đã dùng để
-  kiểm chứng bản Android/Windows), test MRZ và test dựng báo cáo.
+  kiểm chứng bản Android/Windows), test MRZ, test dựng báo cáo, test so khớp tên có dấu/không dấu
+  và test dựng báo cáo kết hợp.
+
+## So khớp họ tên có dấu (OCR) với tên trên chip (không dấu)
+
+Chip chỉ lưu tên không dấu (ASCII, chuẩn Track1/MRZ). Khi chụp OCR mặt thẻ sinh viên, app tìm
+dòng có nhãn "Họ và tên"/"Full name" (hàm `extractOcrName` trong `CardMatch.swift`) để lấy tên
+**có dấu** nguyên bản, so khớp với tên chip sau khi bỏ dấu cả hai (`namesMatch`). Áp dụng cho cả
+màn hình đối chiếu trực tiếp lẫn báo cáo PDF/kết hợp.
+
+## Tab FaceID và tab Kết hợp
+
+- **FaceID**: chụp/chọn ảnh chân dung tham chiếu (hoặc lấy tự động từ DG2 của CCCD) và ảnh chụp
+  live, gọi `POST /face/verify`. Đây không phải kiểm tra chống giả mạo (liveness).
+- **Kết hợp**: xuất PDF/in gộp toàn bộ thông tin đã đọc/kiểm tra ở 3 tab kia, không tự đọc thẻ.
 
 ## Cấu hình NFC cần thiết (đã có sẵn trong `project.yml`)
 

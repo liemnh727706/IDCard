@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct CccdTabView: View {
+    @EnvironmentObject var appState: AppState
     @State private var mrz1 = ""
     @State private var mrz2 = ""
     @State private var doc = ""
@@ -106,7 +107,12 @@ struct CccdTabView: View {
                 DispatchQueue.main.async {
                     resultText = "========== KẾT QUẢ ĐỌC CCCD ==========\n" + res.text
                     report = res.report
-                    if let photo = res.photo, CccdReader.isJpeg(photo), let img = UIImage(data: photo) { portrait = img }
+                    appState.cccdReport = res.report
+                    if let photo = res.photo, CccdReader.isJpeg(photo) {
+                        appState.cccdPhoto = photo
+                        if let img = UIImage(data: photo) { portrait = img }
+                        if appState.refPhoto == nil { appState.refPhoto = photo }
+                    }
                     status = "Đã đọc xong CCCD."
                 }
                 finish("Đã đọc xong")

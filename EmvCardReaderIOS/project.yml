@@ -20,6 +20,7 @@ targets:
         NFCReaderUsageDescription: "Ứng dụng đọc chip thẻ ngân hàng và CCCD qua NFC để kiểm tra thông tin, chỉ khi bạn chủ động áp thẻ."
         NSCameraUsageDescription: "Dùng camera để chụp mặt thẻ, nhận dạng số thẻ hoặc dòng MRZ bằng OCR trên máy."
         NSPhotoLibraryAddUsageDescription: "Lưu báo cáo PDF vào thư viện ảnh nếu bạn chọn chia sẻ."
+        NSPhotoLibraryUsageDescription: "Chọn ảnh có sẵn làm ảnh chân dung tham chiếu hoặc ảnh live khi xác thực khuôn mặt."
         com.apple.developer.nfc.readersession.iso7816.select-identifiers:
           - A0000000031010
           - A0000000041010

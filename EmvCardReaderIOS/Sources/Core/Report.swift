@@ -100,18 +100,21 @@ public enum EmvReport {
         let pan = fullPan ? s.pan : maskPan(s.pan)
         let exp = s.expiryYymm.map { String($0.suffix(2)) + "/" + String($0.prefix(2)) } ?? "(khong co)"
         let country = s.country == "0704" ? "Viet Nam (704)" : (s.country.isEmpty ? "(khong co)" : s.country)
-        let main: [(String, String)] = [
+        var main: [(String, String)] = [
             ("Loai the / ung dung", "\(s.label) (AID \(s.aid))"),
             ("So the (PAN)", pan + (fullPan ? "" : "  [da che bot]")),
             ("Han dung (MM/YY)", exp),
-            ("Ho ten chu the (theo chip)", s.name.isEmpty ? "(chip khong luu ten)" : s.name),
+        ]
+        if let ocrName = ocr?.name { main.append(("Ho ten (OCR, co dau)", ocrName)) }
+        main.append(("Ho ten chu the (theo chip, khong dau)", s.name.isEmpty ? "(chip khong luu ten)" : s.name))
+        main.append(contentsOf: [
             ("Ngan hang / nha phat hanh", Banks.describe(s.pan)),
             ("Service code", s.serviceCode.isEmpty ? "(khong co)" : s.serviceCode),
             ("Quoc gia phat hanh", country),
-        ]
+        ])
         var sections = [ReportSection(heading: "Thong tin chinh", rows: main)]
         if let ocr = ocr {
-            let v = CardMatcher.compare(ocr, ChipCardInfo(pan: s.pan, expiryYymm: s.expiryYymm))
+            let v = CardMatcher.compare(ocr, ChipCardInfo(pan: s.pan, expiryYymm: s.expiryYymm, name: s.name))
             sections.append(ReportSection(heading: "Doi chieu voi mat the (OCR)", rows: [("Ket luan", v.overall)],
                                           text: v.lines.map { "- " + $0 }.joined(separator: "\n")))
         }

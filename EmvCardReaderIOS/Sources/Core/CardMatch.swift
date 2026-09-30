@@ -1,7 +1,50 @@
 import Foundation
 
-public struct OcrCardInfo { public let pans: [String]; public let expiries: [String]; public let rawText: String }
-public struct ChipCardInfo { public let pan: String; public let expiryYymm: String? }
+public struct OcrCardInfo { public let pans: [String]; public let expiries: [String]; public let rawText: String; public let name: String? }
+public struct ChipCardInfo { public let pan: String; public let expiryYymm: String?; public let name: String
+    public init(pan: String, expiryYymm: String?, name: String = "") {
+        self.pan = pan; self.expiryYymm = expiryYymm; self.name = name
+    }
+}
+
+/// Bo dau tieng Viet (NFD roi loai ky tu combining), dung de so khop ten chip (khong dau) voi
+/// ten OCR (co dau).
+public func stripVietnameseDiacritics(_ s: String) -> String {
+    let folded = s.folding(options: .diacriticInsensitive, locale: Locale(identifier: "vi_VN"))
+    return folded.replacingOccurrences(of: "\u{0110}", with: "D").replacingOccurrences(of: "\u{0111}", with: "d")
+}
+
+public func namesMatch(_ chipNameNoDiacritics: String, _ ocrNameWithDiacritics: String) -> Bool {
+    let a = stripVietnameseDiacritics(chipNameNoDiacritics).uppercased()
+        .trimmingCharacters(in: .whitespaces).components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+    let b = stripVietnameseDiacritics(ocrNameWithDiacritics).uppercased()
+        .trimmingCharacters(in: .whitespaces).components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+    return a.sorted() == b.sorted()
+}
+
+private let nameLabelRe = try! NSRegularExpression(
+    pattern: "(?:ho\\s*va\\s*ten|ho\\s*ten|full\\s*name|name)\\s*[:\\-]?\\s*", options: [.caseInsensitive])
+
+/// Tim dong chua ho ten co dau tren anh OCR (the sinh vien/CCCD), theo nhan "Ho va ten"/"Full name".
+public func extractOcrName(_ text: String) -> String? {
+    for raw in text.components(separatedBy: .newlines) {
+        let line = raw.trimmingCharacters(in: .whitespaces)
+        if line.isEmpty { continue }
+        let stripped = stripVietnameseDiacritics(line)
+        let ns = stripped as NSString
+        guard let m = nameLabelRe.firstMatch(in: stripped, range: NSRange(location: 0, length: ns.length)) else { continue }
+        let end = m.range.location + m.range.length
+        guard end <= (line as NSString).length else { continue }
+        var candidate = (line as NSString).substring(from: end).trimmingCharacters(in: .whitespaces)
+        candidate = candidate.replacingOccurrences(of: "[^A-Za-zÀ-ỹ\\s]", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        candidate = candidate.replacingOccurrences(of: "\\s{2,}", with: " ", options: .regularExpression)
+        if candidate.isEmpty { continue }
+        let words = candidate.components(separatedBy: " ")
+        if (2...6).contains(words.count), words.allSatisfy({ !$0.isEmpty && $0.first!.isLetter }) { return candidate }
+    }
+    return nil
+}
 
 public enum OcrParser {
     public static func parse(_ text: String) -> OcrCardInfo {
@@ -30,20 +73,21 @@ public enum OcrParser {
                 if !expiries.contains(v) { expiries.append(v) }
             }
         }
-        return OcrCardInfo(pans: pans, expiries: expiries, rawText: text)
+        return OcrCardInfo(pans: pans, expiries: expiries, rawText: text, name: extractOcrName(text))
     }
 }
 
 public enum CardMatcher {
     public enum Level { case match, partial, mismatch, missing }
     public struct Verdict {
-        public let panLevel: Level; public let expiryLevel: Level; public let bankLevel: Level; public let lines: [String]
+        public let panLevel: Level; public let expiryLevel: Level; public let bankLevel: Level; public let nameLevel: Level; public let lines: [String]
         public var overall: String {
             switch true {
-            case panLevel == .mismatch || expiryLevel == .mismatch || bankLevel == .mismatch:
+            case panLevel == .mismatch || expiryLevel == .mismatch || bankLevel == .mismatch || nameLevel == .mismatch:
                 return "KHONG KHOP: du lieu in khac voi chip, nghi ngo the bi chinh sua hoac OCR sai"
             case panLevel == .match && expiryLevel == .match:
-                return "KHOP: so the va han dung in tren the trung voi chip"
+                let base = "KHOP: so the va han dung in tren the trung voi chip"
+                return nameLevel == .match ? base + ", ca ho ten" : base
             default:
                 return "CHUA KET LUAN: OCR chua du du lieu, thu chup lai ro hon"
             }
@@ -101,6 +145,36 @@ public enum CardMatcher {
             bankLevel = .missing
         }
 
-        return Verdict(panLevel: panLevel, expiryLevel: expiryLevel, bankLevel: bankLevel, lines: lines)
+        let nameLevel: Level
+        if chip.name.trimmingCharacters(in: .whitespaces).isEmpty {
+            lines.append("Ho ten: chip khong luu ten, khong so khop duoc"); nameLevel = .missing
+        } else if let ocrName = ocr.name {
+            if namesMatch(chip.name, ocrName) {
+                lines.append("Ho ten: OCR doc \"\(ocrName)\" (co dau), khop voi ten chip \"\(chip.name)\" (khong dau)")
+                nameLevel = .match
+            } else {
+                lines.append("Ho ten: OCR doc \"\(ocrName)\", KHONG khop voi ten chip \"\(chip.name)\"")
+                nameLevel = .mismatch
+            }
+        } else {
+            let toks = stripVietnameseDiacritics(chip.name).uppercased().components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+            let printed = stripVietnameseDiacritics(ocr.rawText).uppercased()
+            let hit = toks.filter { t in
+                (try? NSRegularExpression(pattern: "(?<![A-Z])" + NSRegularExpression.escapedPattern(for: t) + "(?![A-Z])"))?
+                    .firstMatch(in: printed, range: NSRange(location: 0, length: (printed as NSString).length)) != nil
+            }
+            if !toks.isEmpty && hit.count == toks.count {
+                lines.append("Ho ten: ten trong chip xuat hien du tren mat the (khop, chua xac dinh duoc dang co dau)")
+                nameLevel = .match
+            } else if !hit.isEmpty {
+                lines.append("Ho ten: chi thay \(hit.count)/\(toks.count) tu cua ten chip tren mat the")
+                nameLevel = .partial
+            } else {
+                lines.append("Ho ten: ten trong chip khong thay tren mat the (hoac OCR chua doc duoc ten)")
+                nameLevel = .mismatch
+            }
+        }
+
+        return Verdict(panLevel: panLevel, expiryLevel: expiryLevel, bankLevel: bankLevel, nameLevel: nameLevel, lines: lines)
     }
 }
